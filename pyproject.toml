@@ -13,6 +13,23 @@ implicit_optional = false
 module = "setuptools.*"
 ignore_missing_imports = true
 
+# To generate LINSTOR stubs, run the following commands in the LINSTOR source folder:
+# ./setup.py build
+# stubgen --include-private build/lib/linstor/ -o <XCP_STORAGE_PATH>/stubs/
+# echo "from . import sharedconsts as consts" >> <XCP_STORAGE_PATH>/stubs/linstor/__init__.pyi
+[[tool.mypy.overrides]]
+module = "linstor.*"
+
+disable_error_code = [
+    "arg-type",
+    "attr-defined",
+    "explicit-override",
+    "name-defined",
+    "no-redef",
+    "override"
+]
+disallow_untyped_defs = false
+
 [tool.ruff]
 include = [
     "src/**/*.py"
@@ -82,6 +99,7 @@ case-sensitive = false
 combine-as-imports = true
 force-sort-within-sections = true
 known-first-party = ["xcp_storage"]
+known-third-party = ["linstor"]
 lines-after-imports = 1
 order-by-type = false
 section-order = [
