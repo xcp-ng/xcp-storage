@@ -1,0 +1,30 @@
+name: Code checkers
+
+on: [push, pull_request]
+
+jobs:
+  linting:
+    name: Linting
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-python-env
+
+      - name: Install Ruff
+        run: pip install ruff
+
+      - name: Ruff check
+        run: ruff check
+
+  static-type-checking:
+    name: Static type checking
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-python-env
+
+      - name: Install Mypy
+        run: pip install mypy
+
+      - name: Mypy check
+        run: mypy
