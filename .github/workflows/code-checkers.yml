@@ -28,3 +28,16 @@ jobs:
 
       - name: Mypy check
         run: mypy
+
+  tests:
+    name: Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-python-env
+
+      - name: Install Pytest
+        run: pip install pytest
+
+      - name: Pytest check
+        run: pytest

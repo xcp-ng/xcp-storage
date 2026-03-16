@@ -1,7 +1,8 @@
 [tool.mypy]
 mypy_path = "stubs"
 files = [
-    "src"
+    "src",
+    "tests"
 ]
 
 disallow_untyped_defs = true
@@ -32,7 +33,8 @@ disallow_untyped_defs = false
 
 [tool.ruff]
 include = [
-    "src/**/*.py"
+    "src/**/*.py",
+    "tests/**/*.py"
 ]
 line-length = 120
 
@@ -116,3 +118,4 @@ ban-relative-imports = "all"
 
 [tool.pytest.ini_options]
 pythonpath = ["src", "stubs"]
+testpaths = ["tests"]
