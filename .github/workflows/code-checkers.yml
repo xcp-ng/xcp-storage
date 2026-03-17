@@ -2,42 +2,64 @@ name: Code checkers
 
 on: [push, pull_request]
 
+env:
+  PYTHON_VERSIONS: '["3.8", "3.14"]'
+
 jobs:
+  setup:
+    name: Setup
+    runs-on: ubuntu-latest
+    outputs:
+      python-versions: ${{ env.PYTHON_VERSIONS }}
+      python-latest: ${{ steps.set-vars.outputs.python-latest }}
+    steps:
+      - id: set-vars
+        run: |
+          LATEST=$(echo '${{ env.PYTHON_VERSIONS }}' | jq -c '.[-1:]')
+          echo "python-latest=$LATEST" >> $GITHUB_OUTPUT
+
   linting:
     name: Linting
     runs-on: ubuntu-latest
+    needs: setup
+    strategy:
+      matrix:
+        python-version: ${{ fromJSON(needs.setup.outputs.python-versions) }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: ./.github/actions/setup-python-env
-
-      - name: Install Ruff
-        run: pip install ruff
-
-      - name: Ruff check
-        run: ruff check
+        with:
+          python-version: ${{ matrix.python-version }}
+      - run: uv run ruff check
 
   static-type-checking:
     name: Static type checking
     runs-on: ubuntu-latest
+    needs: setup
+    strategy:
+      matrix:
+        python-version: ${{ fromJSON(needs.setup.outputs.python-latest) }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: ./.github/actions/setup-python-env
-
-      - name: Install Mypy
-        run: pip install mypy
+        with:
+          python-version: ${{ matrix.python-version }}
 
       - name: Mypy check
-        run: mypy
+        run: uv run mypy
 
   tests:
     name: Tests
     runs-on: ubuntu-latest
+    needs: setup
+    strategy:
+      matrix:
+        python-version: ${{ fromJSON(needs.setup.outputs.python-versions) }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: ./.github/actions/setup-python-env
-
-      - name: Install Pytest
-        run: pip install pytest
+        with:
+          python-version: ${{ matrix.python-version }}
 
       - name: Pytest check
-        run: pytest
+        run: uv run pytest

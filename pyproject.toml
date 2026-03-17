@@ -1,3 +1,24 @@
+[project]
+name = "xcp-storage"
+dynamic = [
+    "authors",
+    "description",
+    "license",
+    "version"
+]
+requires-python = ">=3.7" # TODO(XCPNG-3032): Change it for modern python.
+
+[build-system]
+requires = ["setuptools>=40"]
+build-backend = "setuptools.build_meta"
+
+[dependency-groups]
+dev = [
+    "mypy>=1.4.1",
+    "pytest>=7.4.4",
+    "ruff>=0.15.6",
+]
+
 [tool.mypy]
 mypy_path = "stubs"
 files = [
