@@ -143,18 +143,17 @@ class TestJsonRpcRequest:
         def multiply(a: int, b: int) -> int:
             return a * b
 
+        # TODO(XCPNG-3032): Remove it for python 3.11.
+        # Small hack to use basic function name in python 3.6 because exception messages use it.
+        multiply.__qualname__ = multiply.__name__
+
         request_processor = JsonRpcRequestProcessor(dispatcher)
         request = JsonRpcRequest(1, "multiply", {"a": 23, "c": 42})
         response = request_processor.process(request.to_json())
         assert_response_error(response, 1, {
             "code": -32602,
             "message": "Invalid params",
-            "data": {
-                "message": (
-                    "TestJsonRpcRequest.test_invalid_params.<locals>.multiply() "
-                    "got an unexpected keyword argument 'c'"
-                )
-            }
+            "data": {"message": f"{multiply.__qualname__}() got an unexpected keyword argument 'c'"}
         })
 
 # ------------------------------------------------------------------------------
