@@ -1,0 +1,634 @@
+#!/usr/bin/env python3
+
+# ==============================================================================
+# TODO(Mathieu Labourier): Remove all hacks for python 3.11.
+
+import contextlib
+import typing
+from typing import *  # noqa: F403
+
+if typing.TYPE_CHECKING:
+    from typing_extensions import override, ParamSpec
+
+if not hasattr(typing, "Never"):
+    Never = None  # type: ignore
+
+if not hasattr(typing, "ParamSpec"):
+
+    class _SubscriptableListMock(list):
+        def __getitem__(self, _):  # type: ignore # noqa: ANN001, ANN204
+            return self
+
+        def __getattr__(self, _):  # type: ignore # noqa: ANN001, ANN204
+            return self
+
+        def __call__(self, *_args, **_kwargs):  # type: ignore # noqa: ANN002, ANN003, ANN204
+            return self
+
+    ParamSpec = _SubscriptableListMock()  # type: ignore
+    Concatenate = _SubscriptableListMock()  # type: ignore
+
+if not hasattr(typing, "Literal"):
+    from typing_extensions import Literal  # noqa: F401, UP035
+
+if not hasattr(typing, "override"):
+
+    def override(method):  # type: ignore # noqa: ANN001, ANN201
+        with contextlib.suppress(AttributeError, TypeError):
+            # Set internal attr `__override__` like described in PEP 698.
+            method.__override__ = True
+        return method
+
+# ==============================================================================
+
+import argparse
+import logging
+from pathlib import Path
+import shlex
+import shutil
+import subprocess
+import sys
+import time
+from typing import Callable, cast, Dict, List, Optional, Tuple, Type, TypeVar
+import uuid
+
+T = TypeVar("T")
+P = ParamSpec("P")
+
+logging.basicConfig(level=logging.DEBUG)
+logger = logging.getLogger(__name__)
+
+
+SCRIPT_NAME = "provision-witness"
+
+FROM_EXISTING_COMMAND = "from-existing"
+FROM_EXISTING_ALIASES = ["from_existing", "existing", "e"]
+FROM_EXISTING: set[str] = {*FROM_EXISTING_ALIASES, FROM_EXISTING_COMMAND}
+
+FROM_TEMPLATE_COMMAND = "from-template"
+FROM_TEMPLATE_ALIASES = ["from_template", "template", "t"]
+FROM_TEMPLATE: set[str] = {*FROM_TEMPLATE_ALIASES, FROM_TEMPLATE_COMMAND}
+
+MAKE_TEMPLATE_COMMAND = "make-template"
+MAKE_TEMPLATE_ALIASES = ["make_template", "make", "mt", "m"]
+MAKE_TEMPLATE: set[str] = {*MAKE_TEMPLATE_ALIASES, MAKE_TEMPLATE_COMMAND}
+
+UPDATE_IN_PLACE_COMMAND = "update-in-place"
+UPDATE_IN_PLACE_ALIASES = ["update_in_place", "ui"]
+UPDATE_IN_PLACE: set[str] = {*UPDATE_IN_PLACE_ALIASES, UPDATE_IN_PLACE_COMMAND}
+
+UPDATE_FROM_NEW_COMMAND = "update-from-new"
+UPDATE_FROM_NEW_ALIASES = ["update_from_new", "un"]
+UPDATE_FROM_NEW: set[str] = {*UPDATE_FROM_NEW_ALIASES, UPDATE_FROM_NEW_COMMAND}
+
+PROVISION_COMMANDS = {*FROM_EXISTING, *MAKE_TEMPLATE, *UPDATE_IN_PLACE}
+SPAWN_COMMANDS = {*FROM_TEMPLATE}
+NO_POOL_COMMANDS = {*UPDATE_IN_PLACE, *MAKE_TEMPLATE}
+
+XE_COMMAND_PATH = "/opt/xensource/bin/xe"
+LINSTOR_COMMAND_PATH = "/usr/bin/linstor"
+
+
+class MultitonMeta(type):
+    """
+    Metaclass for implementing the Multiton design pattern.
+
+    This metaclass ensures that instances of a class using it are created only once
+    for each unique combination of arguments passed to the class. This allows
+    distinct objects to exist for different parameter combinations but prevents
+    the creation of more than one object for the same set of parameters.
+
+    This metaclass can be used for classes that could act as globals,
+    or that don't need to be created more than once.
+
+    Attributes:
+        _instances: A dictionary storing unique class instances
+            based on their class type and constructor arguments as keys.
+    """
+
+    _instances: Dict[Tuple[Type[object], object, object], object] = {}
+
+    @override
+    def __call__(cls: Type[T], *args: object, **kwargs: object) -> T:
+        key = (cls, args, tuple(kwargs.items()))
+        if key not in MultitonMeta._instances:
+            MultitonMeta._instances[key] = type.__call__(cls, *args, **kwargs)
+        return cast(T, MultitonMeta._instances[key])
+
+
+def _run_command(cmd: List[str], *, print_error: bool = True) -> str:
+    try:
+        return subprocess.run(  # noqa: S603, UP022
+            cmd,
+            check=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        ).stdout.strip()
+    except subprocess.CalledProcessError as e:
+        if print_error:
+            logger.error("Command failed [%d]: '%s'\nstderr: `%s`", e.returncode, cmd, e.stderr)
+        raise
+
+
+def _stream_output(process: "subprocess.Popen[str]", cmd: List[str]) -> None:
+    if not process.stdout:
+        raise ValueError("process.stdout is None.")
+    try:
+        for line in iter(process.stdout.readline, ""):
+            logger.info(line.strip())
+
+        if process.wait() != 0:
+            raise subprocess.CalledProcessError(process.returncode, cmd, stderr="streamed output")
+    finally:
+        process.stdout.close()
+        if process.stderr:
+            process.stderr.close()
+
+
+class CommandRunner(metaclass=MultitonMeta):
+    def __init__(self, *, dry_run: bool = False, ssh_key: Optional[str] = None) -> None:
+        self.dry_run = dry_run
+        self.ssh_key = ssh_key
+
+    def run_command(
+        self,
+        cmd: List[str],
+        *,
+        ignore_dry_run: bool = False,
+        remote_host: str = "",
+        print_error: bool = True,
+        stream: bool = False,
+    ) -> str:
+        with_key = ["-i", shlex.quote(self.ssh_key)] if self.ssh_key else []
+        if remote_host:
+            cmd = ["ssh", f"root@{shlex.quote(remote_host)}"] + with_key + ["-C" + shlex.quote(shlex.join(cmd))]
+
+        logger.debug("Running: '%s'.", cmd)
+
+        if self.dry_run and not ignore_dry_run:
+            return ""
+
+        if not stream:
+            return _run_command(cmd, print_error=print_error)
+
+        try:
+            with subprocess.Popen(  # noqa: S603
+                cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, universal_newlines=True, bufsize=1
+            ) as process:
+                _stream_output(process, cmd)
+        except subprocess.CalledProcessError as e:
+            if print_error:
+                logger.error("Command failed [%d]: '%s'\noutput: `%s`", e.returncode, cmd, e.stdout)
+            raise
+        return ""
+
+    def run_script(
+        self, path: str, *, remote_host: str = "", print_error: bool = True, remove_script: bool = True
+    ) -> None:
+        if not remote_host:
+            self.run_write_command(["bash", shlex.quote(path)], print_error=print_error, stream=True)
+            return
+        logger.debug("Creating remote temp directory on '%s'.", remote_host)
+        remote_dir = self.run_write_command(["mktemp", "-d"], remote_host=remote_host, print_error=print_error)
+        if not remote_dir:
+            err_msg = "Could not create remote temp directory."
+            logger.error(err_msg)
+            raise RuntimeError(err_msg)
+        remote_path = Path.joinpath(Path(remote_dir), uuid.uuid4().hex).absolute().as_posix()
+        logger.debug("Copying '%s' to '%s:%s'.", path, remote_host, remote_path)
+        with_key = ["-i", shlex.quote(self.ssh_key)] if self.ssh_key else []
+        self.run_write_command(
+            ["scp"] + with_key + [shlex.quote(path), f"root@{shlex.quote(remote_host)}:{shlex.quote(remote_path)}"],
+            print_error=print_error,
+        )
+        try:
+            logger.debug("Running '%s' on '%s'", path, remote_host)
+            self.run_write_command(
+                ["bash", shlex.quote(remote_path)], remote_host=remote_host, print_error=print_error, stream=True
+            )
+        finally:
+            if remove_script:
+                logger.debug("Removing '%s' from '%s'", remote_path, remote_host)
+                self.run_write_command(
+                    ["rm", shlex.quote(remote_path)], remote_host=remote_host, print_error=print_error, stream=True
+                )
+
+    def run_read_command(
+        self, cmd: List[str], *, remote_host: str = "", print_error: bool = True, stream: bool = False
+    ) -> str:
+        return self.run_command(
+            cmd, ignore_dry_run=True, remote_host=remote_host, print_error=print_error, stream=stream
+        )
+
+    def run_write_command(
+        self, cmd: List[str], *, remote_host: str = "", print_error: bool = True, stream: bool = False
+    ) -> str:
+        return self.run_command(
+            cmd, ignore_dry_run=False, remote_host=remote_host, print_error=print_error, stream=stream
+        )
+
+
+g_witness_ip = ""
+
+
+def set_witness_ip(ip: str) -> None:
+    global g_witness_ip  # noqa: PLW0603
+    g_witness_ip = ip
+
+
+def wait_for_condition(function: Callable[[], T], timeout: float, interval: float) -> T:
+    if timeout <= 0:
+        return function()
+
+    start_time = time.time()
+    while True:
+        result = function()
+        if result or time.time() - start_time >= timeout:
+            return result
+        time.sleep(interval)
+
+
+def is_remote_reachable(runner: CommandRunner) -> bool:
+    try:
+        runner.run_read_command(["hostname"], remote_host=g_witness_ip, print_error=False)
+        return True
+    except subprocess.CalledProcessError:
+        return False
+
+
+def reboot_remote(runner: CommandRunner) -> None:
+    logger.info("Rebooting remote host '%s'", g_witness_ip)
+    runner.run_write_command(["reboot"], remote_host=g_witness_ip)
+    logger.info("Waiting for VM to go down...")
+    wait_for_condition(lambda: not is_remote_reachable(runner), timeout=300, interval=30)
+    logger.info("Waiting for VM to come back up...")
+    wait_for_condition(lambda: is_remote_reachable(runner), timeout=300, interval=30)
+    logger.error("VM is not reachable at IP '%s' after reboot.", g_witness_ip)
+    raise RuntimeError("VM is not reachable after reboot.")
+
+
+def provision_witness() -> None:
+    script_dir = Path("./scripts").absolute()
+
+    def script_path(script_name: str) -> str:
+        return Path.joinpath(script_dir, script_name).as_posix()
+
+    runner = CommandRunner(dry_run=g_args.dry_run, ssh_key=g_args.witness_ssh_key_path)
+    if not g_args.skip_setup:
+        logger.info("Starting provisioning of LINSTOR witness node.")
+        logger.info("Setting up node.")
+        runner.run_script(script_path("setup.bash"), remote_host=g_witness_ip)
+        logger.info("Rebooting node.")
+        reboot_remote(runner)
+    if not g_args.skip_drbd:
+        logger.info("Installing DRBD.")
+        runner.run_script(script_path("drbd_install.bash"), remote_host=g_witness_ip)
+    if not g_args.skip_linstor:
+        logger.info("Installing LINSTOR.")
+        runner.run_script(script_path("linstor_install.bash"), remote_host=g_witness_ip)
+    if g_args.command in UPDATE_IN_PLACE:
+        logger.info("Rebooting node.")
+        reboot_remote(runner)
+    if g_args.command in MAKE_TEMPLATE:
+        logger.info("Preparing template.")
+        runner.run_script(script_path("prepare_template.bash"), remote_host=g_witness_ip, remove_script=False)
+
+
+def spawn_witness() -> None:
+    input("You will have to enter the password for the witness node when prompted to. Press Enter when ready.")
+
+    local_xva_path = Path(g_args.template_xva_path).absolute().as_posix()
+    xva_path = local_xva_path
+    if g_args.host_ip:
+        xva_path = "witness.xva"
+        with_key = ["-i", shlex.quote(g_args.host_ssh_key_path)] if g_args.host_ssh_key_path else []
+        CommandRunner(dry_run=g_args.dry_run).run_write_command(
+            ["scp"]
+            + with_key
+            + [shlex.quote(local_xva_path), f"root@{shlex.quote(g_args.host_ip)}:{shlex.quote(xva_path)}"]
+        )
+
+    runner = CommandRunner(dry_run=g_args.dry_run, ssh_key=g_args.host_ssh_key_path)
+    logger.info("Spawning witness node from template.")
+    vm_uuid = runner.run_write_command(
+        [XE_COMMAND_PATH, "vm-import", f"filename={shlex.quote(xva_path)}", f"sr-uuid={shlex.quote(g_args.vm_sr)}"],
+        remote_host=g_args.host_ip,
+    ).strip()
+    if not vm_uuid:
+        logger.error("Could not spawn witness node")
+        sys.exit(1)
+    logger.info("Spawned witness node with UUID '%s'.", vm_uuid)
+
+    runner.run_write_command(
+        [XE_COMMAND_PATH, "vm-param-set", f"uuid={shlex.quote(vm_uuid)}", f"name-label={shlex.quote(g_args.vm_name)}"],
+        remote_host=g_args.host_ip,
+    )
+
+    old_vifs = runner.run_read_command(
+        [XE_COMMAND_PATH, "vif-list", f"vm-uuid={shlex.quote(vm_uuid)}", "--minimal"], remote_host=g_args.host_ip
+    )
+    if old_vifs:
+        for vif in old_vifs.split(","):
+            logger.info("Destroying old VIF '%s'.", vif.strip())
+            runner.run_write_command(
+                [XE_COMMAND_PATH, "vif-destroy", f"uuid={shlex.quote(vif.strip())}"], remote_host=g_args.host_ip
+            )
+
+    vif_uuid = runner.run_write_command(
+        [
+            XE_COMMAND_PATH,
+            "vif-create",
+            f"vm-uuid={shlex.quote(vm_uuid)}",
+            f"network-uuid={shlex.quote(g_args.vm_network)}",
+            "device=0",
+        ],
+        remote_host=g_args.host_ip,
+    ).strip()
+    if not vif_uuid:
+        logger.error("Could not create VIF.")
+        sys.exit(1)
+    logger.info("Created VIF with UUID '%s'.", vif_uuid)
+
+    logger.info("Starting witness node.")
+    runner.run_write_command([XE_COMMAND_PATH, "vm-start", f"uuid={shlex.quote(vm_uuid)}"], remote_host=g_args.host_ip)
+
+    def get_vm_ip() -> Optional[str]:
+        networks = runner.run_read_command(
+            [XE_COMMAND_PATH, "vm-list", f"uuid={shlex.quote(vm_uuid)}", "params=networks", "--minimal"],
+            remote_host=g_args.host_ip,
+        )
+        if networks:
+            try:
+                return networks.split(";")[0].split(":")[1].strip()
+            except IndexError:
+                return None
+        return None
+
+    wait_for_condition(lambda: get_vm_ip() is not None, timeout=300, interval=30)
+    vm_ip = get_vm_ip()
+    if not vm_ip:
+        logger.error("Could not get IP address of VM.")
+        vm_ip = input("Please enter the IP address of the VM: ")
+    else:
+        logger.info("VM IP address is '%s'.", vm_ip)
+    logger.info("Waiting for VM to be reachable at '%s'.", vm_ip)
+
+    set_witness_ip(vm_ip)
+
+
+def prepare_witness() -> None:
+    runner = CommandRunner(dry_run=g_args.dry_run, ssh_key=g_args.witness_ssh_key_path)
+    if g_args.set_ssh_key_path:
+        logger.info("Setting SSH key.")
+        runner.run_write_command(
+            ["ssh-copy-id", "-i", shlex.quote(g_args.set_ssh_key_path), f"root@{shlex.quote(g_witness_ip)}"]
+        )
+        if g_args.witness_ssh_key_path is None:
+            g_args.witness_ssh_key_path = g_args.set_ssh_key_path
+            runner = CommandRunner(dry_run=g_args.dry_run, ssh_key=g_args.witness_ssh_key_path)
+    if g_args.set_hostname:
+        logger.info("Setting hostname to '%s'.", g_args.set_hostname)
+        runner.run_write_command(
+            ["hostnamectl", "set-hostname", shlex.quote(g_args.set_hostname)], remote_host=g_witness_ip
+        )
+    if g_args.set_password:
+        logger.info("Setting password.")
+        runner.run_write_command(
+            ["echo", f"root:{shlex.quote(g_args.set_password)}", "|", "chpasswd"], remote_host=g_witness_ip
+        )
+
+
+def setup_pool() -> None:
+    runner = CommandRunner(dry_run=g_args.dry_run, ssh_key=g_args.cluster_ssh_key_path)
+    logger.info("Adding witness LINSTOR node to pool.")
+    ips = runner.run_read_command(
+        [XE_COMMAND_PATH, "host-list", "params=address", "--minimal"], remote_host=g_args.cluster_ip
+    )
+
+    if getattr(g_args, "evacuate_node", None):
+        logger.info("Evacuating node '%s'.", g_args.evacuate_node)
+        runner.run_write_command(
+            [
+                LINSTOR_COMMAND_PATH,
+                f"--controller={shlex.quote(ips)}",
+                "node",
+                "evacuate",
+                shlex.quote(g_args.evacuate_node),
+            ],
+            remote_host=g_args.cluster_ip,
+        )
+        if g_args.remove_node:
+            logger.info("Removing node '%s'.", g_args.evacuate_node)
+            runner.run_write_command(
+                [
+                    LINSTOR_COMMAND_PATH,
+                    f"--controller={shlex.quote(ips)}",
+                    "node",
+                    "delete",
+                    shlex.quote(g_args.evacuate_node),
+                ],
+                remote_host=g_args.cluster_ip,
+            )
+
+    cmd = [
+        LINSTOR_COMMAND_PATH,
+        f"--controller={shlex.quote(ips)}",
+        "node",
+        "create",
+        shlex.quote(g_args.set_hostname or "witness"),
+        shlex.quote(g_witness_ip),
+        "--node-type",
+        "satellite",
+    ]
+    runner.run_write_command(cmd, remote_host=g_args.cluster_ip)
+
+
+def main() -> None:
+    commands = {g_args.command, getattr(g_args, "update_command", None)}
+    # Whitelist
+    should_provision = not commands.isdisjoint(PROVISION_COMMANDS)
+    should_spawn = not commands.isdisjoint(SPAWN_COMMANDS)
+    # Blacklist
+    should_setup_pool = commands.isdisjoint(NO_POOL_COMMANDS)
+
+    if should_provision:
+        logger.debug("IN PROVISION")
+        set_witness_ip(g_args.witness_ip)
+        prepare_witness()
+        provision_witness()
+    elif should_spawn:
+        logger.debug("IN SPAWN")
+        spawn_witness()
+        if not g_witness_ip and not g_args.dry_run:
+            logger.error("Could not determine IP address of the VM.")
+            sys.exit(1)
+        prepare_witness()
+    else:
+        argparser.error("Please specify a valid command.")
+    if should_setup_pool:
+        logger.debug("IN SETUP POOL")
+        setup_pool()
+
+
+if __name__ == "__main__":
+
+    def has_xe() -> bool:
+        return shutil.which(XE_COMMAND_PATH) is not None
+
+    def generate_common_parser() -> argparse.ArgumentParser:
+        parser = argparse.ArgumentParser(add_help=False)
+
+        common_settings = parser.add_argument_group("Witness VM settings")
+        common_settings.add_argument("--set-hostname", help="Hostname to set on the target VM")
+        common_settings.add_argument("--set-password", help="Password to set on the target VM")
+        common_settings.add_argument("--set-ssh-key-path", help="SSH key path to copy on the target VM")
+
+        common_group = parser.add_argument_group("Common arguments")
+        common_group.add_argument("--dry-run", action="store_true", help="Dry run")
+        common_group.add_argument(
+            "--log-level",
+            type=lambda x: x.upper(),
+            choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
+            default="INFO",
+            help="Logging level (default: INFO)",
+        )
+
+        return parser
+
+    def generate_common_linstor_parser() -> argparse.ArgumentParser:
+        parser = argparse.ArgumentParser(add_help=False)
+
+        common_linstor = parser.add_argument_group("Linstor pool")
+        common_linstor.add_argument("--cluster-ip", required=True, help="IP address of an existing node")
+        common_linstor.add_argument("--cluster-ssh-key-path", help="SSH key path for the linstor cluster")
+
+        return parser
+
+    def generate_from_existing_parser() -> argparse.ArgumentParser:
+        parser = argparse.ArgumentParser(add_help=False)
+
+        witness_group = parser.add_argument_group("Witness node")
+        witness_group.add_argument("--witness-ip", required=True, help="IP address of the target VM")
+        witness_group.add_argument("--witness-ssh-key-path", help="SSH key path for the target VM")
+
+        skip_group = parser.add_argument_group("Skip")
+        skip_group.add_argument("--skip-setup", action="store_true", help="Skip setup step of the VM")
+        skip_group.add_argument("--skip-drbd", action="store_true", help="Skip DRBD installation")
+        skip_group.add_argument("--skip-linstor", action="store_true", help="Skip LINSTOR installation")
+
+        return parser
+
+    def generate_from_template_parser() -> argparse.ArgumentParser:
+        parser = argparse.ArgumentParser(add_help=False)
+
+        template_group = parser.add_argument_group("Template VM settings")
+        template_group.add_argument("--template-xva-path", type=Path, required=True, help="Path to the template XVA")
+        template_group.add_argument("--vm-name", required=True, help="Name of the target VM")
+        template_group.add_argument("--vm-sr", required=True, help="SR UUID to create the target VM in")
+        template_group.add_argument("--vm-network", required=True, help="UUID of the network to use")
+
+        xcp_group = parser.add_argument_group("xcp-ng pool")
+        xcp_group.add_argument("--host-ip", required=has_xe(), help="IP address of the witness VM host")
+        xcp_group.add_argument("--host-ssh-key-path", help="SSH key path for the witness VM host")
+
+        return parser
+
+    def generate_update_from_new_common_parser() -> argparse.ArgumentParser:
+        parser = argparse.ArgumentParser(add_help=False)
+
+        parser.add_argument("--evacuate-node", required=True, help="Name of the node to be evacuated")
+        parser.add_argument("--remove-node", action="store_true", help="Remove the evacuated node")
+
+        return parser
+
+    argparser = argparse.ArgumentParser(
+        description="Spawn a template VM or provision an existing VM to be a LINSTOR witness node", prog=SCRIPT_NAME
+    )
+    subparsers = argparser.add_subparsers(title="command", dest="command")
+    subparsers.required = True
+
+    common_parser = generate_common_parser()
+    common_linstor_parser = generate_common_linstor_parser()
+    existing_parser = generate_from_existing_parser()
+    template_parser = generate_from_template_parser()
+    update_common_parser = generate_update_from_new_common_parser()
+
+    # --- From existing ---
+    existing_subparser = subparsers.add_parser(
+        FROM_EXISTING_COMMAND,
+        aliases=FROM_EXISTING_ALIASES,
+        parents=[common_parser, common_linstor_parser, existing_parser],
+        help="Provision an existing VM.",
+        description="Provision an existing VM to be a LINSTOR witness node.",
+    )
+
+    # --- From template ---
+    template_subparser = subparsers.add_parser(
+        FROM_TEMPLATE_COMMAND,
+        aliases=FROM_TEMPLATE_ALIASES,
+        parents=[common_parser, common_linstor_parser, template_parser],
+        help="Spawn a witness VM from a template.",
+        description="Spawn a witness VM from a template.",
+    )
+
+    # --- Make template ---
+    make_template_subparser = subparsers.add_parser(
+        MAKE_TEMPLATE_COMMAND,
+        aliases=MAKE_TEMPLATE_ALIASES,
+        parents=[common_parser, existing_parser],
+        help="Prepare a VM to be used as a template.",
+        description="Prepare a VM to be used as a template.",
+    )
+
+    # --- Update in place --
+    update_in_place_subparser = subparsers.add_parser(
+        UPDATE_IN_PLACE_COMMAND,
+        aliases=UPDATE_IN_PLACE_ALIASES,
+        parents=[common_parser, existing_parser],
+        help="Update an existing VM.",
+        description="Update an existing VM.",
+    )
+
+    # --- Update from new --
+    update_from_new_subparser = subparsers.add_parser(
+        UPDATE_FROM_NEW_COMMAND,
+        aliases=UPDATE_FROM_NEW_ALIASES,
+        help="Spawn a template VM or provision an existing VM and update the pool to use it.",
+        description="Spawn a template VM or provision an existing VM and update the pool to use it.",
+    )
+    update_from_new_subparsers = update_from_new_subparser.add_subparsers(title="update-command", dest="update_command")
+    update_from_new_subparsers.required = True
+
+    # - From existing -
+    update_from_new_from_existing_subparser = update_from_new_subparsers.add_parser(
+        FROM_EXISTING_COMMAND,
+        aliases=FROM_EXISTING_ALIASES,
+        parents=[common_linstor_parser, common_parser, update_common_parser, existing_parser],
+        help="Provision an existing VM and update the pool to use it.",
+        description="Provision an existing VM and update the pool to use it.",
+    )
+
+    # - From template -
+    # TODO(Mathieu Labourier): Test update from template
+    update_from_new_from_template_subparser = update_from_new_subparsers.add_parser(
+        FROM_TEMPLATE_COMMAND,
+        aliases=FROM_TEMPLATE_ALIASES,
+        parents=[common_linstor_parser, common_parser, update_common_parser, template_parser],
+        help="Spawn a witness VM from a template and update the pool to use it.",
+        description="Spawn a witness VM from a template and update the pool to use it.",
+    )
+
+    g_args = argparser.parse_args()
+    if not hasattr(g_args, "witness_ssh_key_path"):
+        # Prevent errors in template mode
+        g_args.witness_ssh_key_path = None
+
+    logging.basicConfig(level=getattr(logging, g_args.log_level.upper(), "INFO"))
+
+    evacuate_node = getattr(g_args, "evacuate_node", None)
+    if evacuate_node and evacuate_node == g_args.set_hostname:
+        logger.error("Cannot remove the same node that is being added as witness.")
+        sys.exit(1)
+
+    main()
