@@ -1,7 +1,7 @@
 # XOSTOR Witness scripts
 
 In any case, the witness VM should not run on a node of the LINSTOR pool, but on a separate host.
-It is recommended to use a dedicated, possibly a remote host for the witness VM.
+It is required to use a dedicated, possibly a distant host for the witness VM.
 
 The witness VM should have access to the LINSTOR pool network and be able to communicate with the LINSTOR nodes.
 The witness VM will act as a TieBreaker and will help to keep the quorum of the LINSTOR pool in the case of a pool with only two nodes.
