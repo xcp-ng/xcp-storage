@@ -267,6 +267,12 @@ def socket_receive(sock: socket.socket, buffer: bytearray, size: Optional[int] =
 def get_socket_family_str(sock: socket.socket) -> str:
     return _FAMILY_TO_STR.get(sock.family, "Unknown")
 
+def get_socket_port(sock: socket.socket) -> Optional[int]:
+    try:
+        return sock.getsockname()[1]
+    except OSError:
+        return None
+
 # ------------------------------------------------------------------------------
 
 class Socket(contextlib.AbstractContextManager):
@@ -310,6 +316,10 @@ class Socket(contextlib.AbstractContextManager):
     @property
     def family_str(self) -> str:
         return get_socket_family_str(self.sock)
+
+    @property
+    def port(self) -> Optional[int]:
+        return get_socket_port(self.sock)
 
     @property
     def timeout(self) -> Optional[float]:
