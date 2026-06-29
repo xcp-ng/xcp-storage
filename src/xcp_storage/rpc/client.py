@@ -74,7 +74,7 @@ class RpcApiClient(JsonRpcClient):
         *args: P.args,
         **kwargs: P.kwargs
     ) -> JsonValueT:
-        return self.call_api_with_timeout(JSON_RPC_DEFAULT_TIMEOUT, method, *args, **kwargs)
+        return self.call_api_with_timeout(self._client_timeout, method, *args, **kwargs)
 
     def call_api_with_timeout(
         self,
