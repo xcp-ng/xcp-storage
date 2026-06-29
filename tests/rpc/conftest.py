@@ -12,10 +12,24 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-import xcp_storage.rpc.modules.echo as echo
+import threading
+from typing import Generator
+
+import pytest
+
+from xcp_storage.rpc.server import RpcApiServer
 
 # ==============================================================================
 
-__all__ = [
-    "echo"
-]
+@pytest.fixture
+def rpc_server() -> Generator[RpcApiServer, None, None]:
+    server = RpcApiServer("127.0.0.1", 0)
+
+    server_thread = threading.Thread(target=server.run, daemon=True)
+    server_thread.start()
+    server.wait_for_startup()
+
+    yield server
+
+    server.stop()
+    server_thread.join(timeout=2.0)
