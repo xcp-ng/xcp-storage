@@ -12,10 +12,17 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-import xcp_storage.rpc.modules.echo as echo
+import time
+
+from xcp_storage.rpc.dispatcher import ApiDispatcher
 
 # ==============================================================================
 
-__all__ = [
-    "echo"
-]
+@ApiDispatcher.method
+def echo(message: str) -> str:
+    return message
+
+@ApiDispatcher.method
+def defer_echo(message: str, delay: float) -> str:
+    time.sleep(delay)
+    return message
