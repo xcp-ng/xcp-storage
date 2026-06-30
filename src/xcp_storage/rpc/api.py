@@ -12,10 +12,12 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+import xcp_storage.rpc.modules.drbd as drbd
 import xcp_storage.rpc.modules.echo as echo
 
 # ==============================================================================
 
 __all__ = [
+    "drbd",
     "echo"
 ]
