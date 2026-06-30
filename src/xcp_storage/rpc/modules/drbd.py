@@ -12,12 +12,16 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-import xcp_storage.rpc.modules.drbd as drbd
-import xcp_storage.rpc.modules.echo as echo
+from dataclasses import asdict
+
+from xcp_storage.backends.drbd import get_drbd_local_openers
+from xcp_storage.rpc.dispatcher import ApiDispatcher
+from xcp_storage.utils.json import JsonDict
+
+from xcp_storage.typing import List
 
 # ==============================================================================
 
-__all__ = [
-    "drbd",
-    "echo"
-]
+@ApiDispatcher.method
+def get_openers(resource_name: str, volume_number: int) -> List[JsonDict]:
+    return [asdict(opener) for opener in get_drbd_local_openers(resource_name, volume_number)]
