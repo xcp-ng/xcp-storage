@@ -63,3 +63,13 @@ if not TYPE_CHECKING:  # noqa: F405
 
         ParamSpec = _SubscriptableListMock()  # type: ignore
         Concatenate = _SubscriptableListMock()  # type: ignore
+
+    if not hasattr(typing, "assert_type"):
+        _T = TypeVar("T")  # noqa: F405
+        def assert_type(value: _T, expected_type: Type[_T]) -> None:  # noqa: F405
+            pass
+
+# ------------------------------------------------------------------------------
+
+MYPY: Final = False  # noqa: F405
+PYREFLY: Final = False  # noqa: F405
