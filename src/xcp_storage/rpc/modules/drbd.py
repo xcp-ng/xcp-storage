@@ -14,7 +14,7 @@
 
 from dataclasses import asdict
 
-from xcp_storage.backends.drbd import get_drbd_local_openers
+from xcp_storage.backends.drbd import Drbd
 from xcp_storage.rpc.dispatcher import ApiDispatcher
 from xcp_storage.utils.json import JsonDict
 
@@ -32,7 +32,7 @@ from xcp_storage.typing import (
 
 @ApiDispatcher.method
 def get_openers(resource_name: str, volume_number: int) -> List[JsonDict]:
-    openers = [asdict(opener) for opener in get_drbd_local_openers(resource_name, volume_number)]
+    openers = [asdict(opener) for opener in Drbd.get_local_openers(resource_name, volume_number)]
     # Some linters, such as pyrefly, may struggle to convert a type to a recursive type.
     # We therefore perform a static check (so that it's validated by linters) and we cast it explicitly.
     if PYREFLY and not MYPY:
