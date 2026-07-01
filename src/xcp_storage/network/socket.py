@@ -198,13 +198,18 @@ def create_client_sock(
     reuse_address: bool = True,
     keep_alive: bool = True,
     timeout: Optional[float] = None,
-    ssl_context: Optional[ssl.SSLContext] = None
+    ssl_context: Optional[ssl.SSLContext] = None,
+    source_address: Optional[str] = None,
+    source_port: int = 0
 ) -> socket.socket:
     family, connect = format_address(address, port)
     sock = _create_stream_sock(address, family, bind=False, reuse_address=reuse_address, ssl_context=ssl_context)
     _normalize_and_set_sock_timeout(sock, timeout)
 
     try:
+        if source_address:
+            _, bind = format_address(source_address, source_port)
+            sock.bind(bind)
         sock.connect(connect)
     except OSError as e:
         with contextlib.suppress(Exception):
@@ -318,6 +323,12 @@ def socket_wait_readable(sock: socket.socket, *, timeout: Optional[float] = None
 def get_socket_family_str(sock: socket.socket) -> str:
     return _FAMILY_TO_STR.get(sock.family, "Unknown")
 
+def get_socket_address(sock: socket.socket) -> Optional[str]:
+    try:
+        return sock.getsockname()[0]
+    except OSError:
+        return None
+
 def get_socket_port(sock: socket.socket) -> Optional[int]:
     try:
         return sock.getsockname()[1]
@@ -370,6 +381,10 @@ class Socket(contextlib.AbstractContextManager):
     @property
     def family_str(self) -> str:
         return get_socket_family_str(self.sock)
+
+    @property
+    def address(self) -> Optional[str]:
+        return get_socket_address(self.sock)
 
     @property
     def port(self) -> Optional[int]:
