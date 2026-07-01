@@ -21,13 +21,8 @@ from unittest.mock import (
 import pytest
 
 from xcp_storage.backends.drbd import (
-    build_drbd_path,
-    demote_drbd,
+    Drbd,
     DrbdOpeners,
-    get_drbd_connection_address,
-    get_drbd_local_openers,
-    get_drbd_name_from_path,
-    get_drbd_primary_address,
 )
 
 from xcp_storage.typing import (
@@ -44,7 +39,7 @@ from xcp_storage.typing import (
     ("volume-2", 67, "/dev/drbd/by-res/volume-2/67")
 ])
 def test_build_drbd_path(resource_name: str, volume_number: int, expected_path: str) -> None:
-    assert build_drbd_path(resource_name, volume_number) == expected_path
+    assert Drbd.build_path(resource_name, volume_number) == expected_path
 
 # ------------------------------------------------------------------------------
 
@@ -56,7 +51,7 @@ def test_build_drbd_path(resource_name: str, volume_number: int, expected_path: 
     ("../missing-volume-number", "")
 ])
 def test_get_drbd_name_from_path(path: str, expected_name: str) -> None:
-    assert get_drbd_name_from_path(path) == expected_name
+    assert Drbd.get_name_from_path(path) == expected_name
 
 # ------------------------------------------------------------------------------
 
@@ -66,26 +61,26 @@ class TestGetDrbdConnectionAddress:
         self, mock_run_command: MagicMock, drbd_json_status_primary: MagicMock
     ) -> None:
         mock_run_command.return_value = (drbd_json_status_primary, "", 0)
-        assert get_drbd_connection_address("xcp-volume-patate", "sr123-s1") == "10.10.0.12"
+        assert Drbd.get_connection_address("xcp-volume-patate", "sr123-s1") == "10.10.0.12"
 
     def test_connection_address_b(
         self, mock_run_command: MagicMock, drbd_json_status_secondary: MagicMock
     ) -> None:
         mock_run_command.return_value = (drbd_json_status_secondary, "", 0)
-        assert get_drbd_connection_address("xcp-volume-patate", "sr123-s2") == "10.10.0.13"
+        assert Drbd.get_connection_address("xcp-volume-patate", "sr123-s2") == "10.10.0.13"
 
     def test_invalid_resource_with_valid_json(
         self, mock_run_command: MagicMock, drbd_json_status_primary: MagicMock
     ) -> None:
         mock_run_command.return_value = (drbd_json_status_primary, "", 0)
-        assert get_drbd_connection_address("xcp-volume-patate", "sr123-s67") == ""
+        assert Drbd.get_connection_address("xcp-volume-patate", "sr123-s67") == ""
 
     def test_valid_resource_with_invalid_json(
         self, mock_run_command: MagicMock, caplog: pytest.LogCaptureFixture
     ) -> None:
         mock_run_command.return_value = ("[]", "", 0)
         with caplog.at_level("INFO"):
-            assert get_drbd_connection_address("xcp-volume-patate", "sr123-s1") == ""
+            assert Drbd.get_connection_address("xcp-volume-patate", "sr123-s1") == ""
             assert "Failed to parse DRBD configuration" in caplog.text
 
     def test_valid_resource_with_malformed_json(
@@ -93,7 +88,7 @@ class TestGetDrbdConnectionAddress:
     ) -> None:
         mock_run_command.return_value = ("[", "", 0)
         with caplog.at_level("INFO"):
-            assert get_drbd_connection_address("xcp-volume-patate", "sr123-s1") == ""
+            assert Drbd.get_connection_address("xcp-volume-patate", "sr123-s1") == ""
             assert "Failed to read DRBD status as JSON" in caplog.text
 
 # ------------------------------------------------------------------------------
@@ -104,24 +99,24 @@ class TestGetDrbdPrimaryAddress:
         self, mock_run_command: MagicMock, drbd_json_status_primary: MagicMock
     ) -> None:
         mock_run_command.return_value = (drbd_json_status_primary, "", 0)
-        assert get_drbd_primary_address("xcp-volume-patate") == "10.10.0.13"
+        assert Drbd.get_primary_address("xcp-volume-patate") == "10.10.0.13"
 
     def test_primary_remote(
         self, mock_run_command: MagicMock, drbd_json_status_secondary: MagicMock
     ) -> None:
         mock_run_command.return_value = (drbd_json_status_secondary, "", 0)
-        assert get_drbd_primary_address("xcp-volume-patate") == "10.10.0.13"
+        assert Drbd.get_primary_address("xcp-volume-patate") == "10.10.0.13"
 
     def test_invalid_resource_with_valid_json(self, mock_run_command: MagicMock) -> None:
         mock_run_command.return_value = ("[]", "xcp-volume-frite: No such resource", 10)
-        assert get_drbd_primary_address("xcp-volume-frite") == ""
+        assert Drbd.get_primary_address("xcp-volume-frite") == ""
 
     def test_valid_resource_with_invalid_json(
         self, mock_run_command: MagicMock, caplog: pytest.LogCaptureFixture
     ) -> None:
         mock_run_command.return_value = ("[]", "", 0)
         with caplog.at_level("INFO"):
-            assert get_drbd_primary_address("xcp-volume-patate") == ""
+            assert Drbd.get_primary_address("xcp-volume-patate") == ""
             assert "Failed to parse DRBD configuration" in caplog.text
 
     def test_valid_resource_with_malformed_json(
@@ -129,7 +124,7 @@ class TestGetDrbdPrimaryAddress:
     ) -> None:
         mock_run_command.return_value = ("[", "", 0)
         with caplog.at_level("INFO"):
-            assert get_drbd_primary_address("xcp-volume-patate") == ""
+            assert Drbd.get_primary_address("xcp-volume-patate") == ""
             assert "Failed to read DRBD status as JSON" in caplog.text
 
 # ------------------------------------------------------------------------------
@@ -163,7 +158,7 @@ class TestGetDrbdLocalOpeners:
         cmdline_mapping = {d["pid"]: d["cmdline"] for d in opener_data}
         mock_get_cmdline.side_effect = lambda pid: cmdline_mapping.get(pid, [])
 
-        openers = get_drbd_local_openers("res-test", 0)
+        openers = Drbd.get_local_openers("res-test", 0)
 
         assert len(openers) == len(opener_data)
         for i, expected in enumerate(opener_data):
@@ -184,7 +179,7 @@ class TestGetDrbdLocalOpeners:
             openers_path
         )
         with caplog.at_level("INFO"):
-            assert get_drbd_local_openers("res-test", 0) == []
+            assert Drbd.get_local_openers("res-test", 0) == []
         assert (
             "Unable to get DRBD openers of volume `res-test/0`: "
             f"`[Errno 2] No such file or directory: '{openers_path}'`."
@@ -196,7 +191,7 @@ class TestGetDrbdLocalOpeners:
 class TestDemoteDrbd:
     def test_success(self, mock_run_command: MagicMock) -> None:
         mock_run_command.return_value = ("", "", 0)
-        assert demote_drbd("res-test")
+        assert Drbd.demote("res-test")
 
     def test_demote_drbd_open_on_another_node(
         self, mock_run_command: MagicMock, caplog: pytest.LogCaptureFixture
@@ -212,5 +207,5 @@ class TestDemoteDrbd:
         mock_run_command.return_value = ("", stderr, 11)
 
         with caplog.at_level("INFO"):
-            assert not demote_drbd("res-test")
+            assert not Drbd.demote("res-test")
         assert f"Failed to demote DRBD resource `res-test`: `{stderr}`." in caplog.text

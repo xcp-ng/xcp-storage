@@ -50,28 +50,6 @@ _REGEX_DRBD_OPENER_LINE: Final = re.compile(r"(.*)\s+([0-9]+)\s+([0-9]+)")
 
 # ------------------------------------------------------------------------------
 
-def build_drbd_path(resource_name: str, volume_number: int) -> str:
-    return f"{DRBD_BY_RES_PATH}{resource_name}/{volume_number}"
-
-def get_drbd_name_from_path(path: str) -> str:
-    # Assume that we have a path like this:
-    # - "/dev/drbd/by-res/xcp-volume-<UUID>/0"
-    # - "../xcp-volume-<UUID>/0"
-    if path.startswith(DRBD_BY_RES_PATH):
-        prefix_len = len(DRBD_BY_RES_PATH)
-    elif path.startswith("../"):
-        prefix_len = 3
-    else:
-        return ""
-
-    res_name_end = path.find("/", prefix_len)
-    if res_name_end == -1:
-        return ""
-
-    return path[prefix_len:res_name_end]
-
-# ------------------------------------------------------------------------------
-
 @contextlib.contextmanager
 def _handle_drbd_json_error() -> Iterator[None]:
     try:
@@ -106,34 +84,6 @@ def _get_drbd_status(resource_name: str) -> Dict[str, Any]:
 
 # ------------------------------------------------------------------------------
 
-def get_drbd_connection_address(resource_name: str, node_name: str) -> str:
-    status = _get_drbd_status(resource_name)
-    if not status:
-        return ""
-
-    with _handle_drbd_json_error():
-        for connection in status["connections"]:
-            if connection["name"] == node_name:
-                return connection["paths"][0]["remote_host"]["address"]
-    return ""
-
-def get_drbd_primary_address(resource_name: str) -> str:
-    status = _get_drbd_status(resource_name)
-    if not status:
-        return ""
-
-    with _handle_drbd_json_error():
-        if status["role"] == "Primary":
-            return status["connections"][0]["paths"][0]["this_host"]["address"]
-
-        for connection in status["connections"]:
-            if connection["peer-role"] == "Primary":
-                return connection["paths"][0]["remote_host"]["address"]
-
-    return ""
-
-# ------------------------------------------------------------------------------
-
 @dataclass
 class DrbdOpeners:
     pid: int
@@ -142,46 +92,100 @@ class DrbdOpeners:
     # The duration is expressed in milliseconds.
     open_duration: int
 
-def get_drbd_local_openers(resource_name: str, volume_number: int) -> List[DrbdOpeners]:
-    assert resource_name, "Cannot get DRBD openers without resource name."
-
-    path = Path(f"/sys/kernel/debug/drbd/resources/{resource_name}/volumes/{volume_number}/openers")
-    try:
-        lines = path.read_text().splitlines()
-    except Exception as e:
-        # The resource is probably available not on this node.
-        logger.info("Unable to get DRBD openers of volume `%s/%d`: `%s`.", resource_name, volume_number, e)
-        return []
-
-    drbd_openers = []
-    for line in lines:
-        match = _REGEX_DRBD_OPENER_LINE.match(line)
-        if not match:
-            logger.warning("Unable to parse DRBD opener line with: `%s`.", line)
-            continue
-
-        groups = match.groups()
-        pid = int(groups[1])
-        drbd_openers.append(DrbdOpeners(
-            pid=pid,
-            process_name=groups[0],
-            # Note: `cmdline`` is empty for `mount` calls. Logic the PID is dead.
-            cmdline=get_process_cmdline(pid),
-            open_duration=int(groups[2])
-        ))
-
-    return drbd_openers
-
 # ------------------------------------------------------------------------------
 
-def demote_drbd(resource_name: str) -> bool:
-    error_message = ""
-    try:
-        _stdout, stderr, ret_code = run_command([_EXEC_PATH_DRBDSETUP, "secondary", resource_name], simple=False)
-        if not ret_code:
-            return True
-        error_message = stderr
-    except Exception as e:
-        error_message = str(e)
-    logger.error("Failed to demote DRBD resource `%s`: `%s`.", resource_name, error_message)
-    return False
+class Drbd:
+    @staticmethod
+    def build_path(resource_name: str, volume_number: int) -> str:
+        return f"{DRBD_BY_RES_PATH}{resource_name}/{volume_number}"
+
+    @staticmethod
+    def get_name_from_path(path: str) -> str:
+        # Assume that we have a path like this:
+        # - "/dev/drbd/by-res/xcp-volume-<UUID>/0"
+        # - "../xcp-volume-<UUID>/0"
+        if path.startswith(DRBD_BY_RES_PATH):
+            prefix_len = len(DRBD_BY_RES_PATH)
+        elif path.startswith("../"):
+            prefix_len = 3
+        else:
+            return ""
+
+        res_name_end = path.find("/", prefix_len)
+        if res_name_end == -1:
+            return ""
+
+        return path[prefix_len:res_name_end]
+
+
+    @staticmethod
+    def get_connection_address(resource_name: str, node_name: str) -> str:
+        status = _get_drbd_status(resource_name)
+        if not status:
+            return ""
+
+        with _handle_drbd_json_error():
+            for connection in status["connections"]:
+                if connection["name"] == node_name:
+                    return connection["paths"][0]["remote_host"]["address"]
+        return ""
+
+    @staticmethod
+    def get_primary_address(resource_name: str) -> str:
+        status = _get_drbd_status(resource_name)
+        if not status:
+            return ""
+
+        with _handle_drbd_json_error():
+            if status["role"] == "Primary":
+                return status["connections"][0]["paths"][0]["this_host"]["address"]
+
+            for connection in status["connections"]:
+                if connection["peer-role"] == "Primary":
+                    return connection["paths"][0]["remote_host"]["address"]
+
+        return ""
+
+    @staticmethod
+    def get_local_openers(resource_name: str, volume_number: int) -> List[DrbdOpeners]:
+        assert resource_name, "Cannot get DRBD openers without resource name."
+
+        path = Path(f"/sys/kernel/debug/drbd/resources/{resource_name}/volumes/{volume_number}/openers")
+        try:
+            lines = path.read_text().splitlines()
+        except Exception as e:
+            # The resource is probably available not on this node.
+            logger.info("Unable to get DRBD openers of volume `%s/%d`: `%s`.", resource_name, volume_number, e)
+            return []
+
+        drbd_openers = []
+        for line in lines:
+            match = _REGEX_DRBD_OPENER_LINE.match(line)
+            if not match:
+                logger.warning("Unable to parse DRBD opener line with: `%s`.", line)
+                continue
+
+            groups = match.groups()
+            pid = int(groups[1])
+            drbd_openers.append(DrbdOpeners(
+                pid=pid,
+                process_name=groups[0],
+                # Note: `cmdline`` is empty for `mount` calls. Logic the PID is dead.
+                cmdline=get_process_cmdline(pid),
+                open_duration=int(groups[2])
+            ))
+
+        return drbd_openers
+
+    @staticmethod
+    def demote(resource_name: str) -> bool:
+        error_message = ""
+        try:
+            _stdout, stderr, ret_code = run_command([_EXEC_PATH_DRBDSETUP, "secondary", resource_name], simple=False)
+            if not ret_code:
+                return True
+            error_message = stderr
+        except Exception as e:
+            error_message = str(e)
+        logger.error("Failed to demote DRBD resource `%s`: `%s`.", resource_name, error_message)
+        return False
