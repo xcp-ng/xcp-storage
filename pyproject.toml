@@ -53,6 +53,47 @@ disable_error_code = [
 ]
 disallow_untyped_defs = false
 
+# To generate XAPI SMAPIv3 API stubs, run the following commands in an XCP-ng environment:
+#
+# # Clone xen-api.
+# yum install git
+# git clone https://github.com/xapi-project/xen-api
+# cd xen-api/
+#
+# # Init build env.
+# yum install opam gcc make
+# export OCAML_VERSION_FULL="4.14.2"
+# opam init
+# opam switch create xen-api ocaml-base-compiler.$OCAML_VERSION_FULL
+# eval $(opam env --switch=xen-api --set-switch)
+# opam repo add xs-opam https://github.com/xapi-project/xs-opam.git
+# opam repo remove default
+#
+# # Install deps.
+# opam install dune rpclib ppx_deriving_rpc rresult lwt fmt alcotest -y
+#
+# # Build.
+# dune build ocaml/xapi-storage
+#
+# # Build python API.
+# cd _build/default/ocaml/xapi-storage/python/
+# make
+#
+# # Clean env.
+# opam clean
+# rm -rf /root/.opam
+#
+# # Copy python dir in your dev env and then:
+# stubgen --include-private python/ -o <XCP_STORAGE_PATH>/stubs/
+# # Replace invalid return types caused by "raise Unimplemented" calls.
+# find <XCP_STORAGE_PATH>/stubs/xapi/ -name "*.pyi" -exec sed -i 's/ -> None:/:/g' {} +
+[[tool.mypy.overrides]]
+module = "xapi.*"
+disable_error_code = [
+    "explicit-override",
+    "no-untyped-def"
+]
+
 [tool.ruff]
 include = [
     "src/**/*.py",
@@ -123,7 +164,7 @@ case-sensitive = false
 combine-as-imports = true
 force-sort-within-sections = true
 known-first-party = ["xcp_storage"]
-known-third-party = ["linstor"]
+known-third-party = ["linstor", "xapi"]
 lines-after-imports = 1
 order-by-type = false
 section-order = [
