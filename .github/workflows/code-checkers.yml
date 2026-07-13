@@ -64,7 +64,15 @@ jobs:
           python-version: ${{ matrix.python-version }}
 
       - name: Semgrep scan
-        run: uv run semgrep scan --config semgrep.yml --error
+        # Python Flask is excluded due to false positive errors in the JSON-RPC utilities.
+        run: |
+          uv run semgrep scan \
+          --config p/default \
+          --config p/security-audit \
+          --config semgrep.yml \
+          --error \
+          --exclude-rule python.flask.security.audit.directly-returned-format-string.directly-returned-format-string \
+          --exclude-rule yaml.github-actions.security.github-actions-mutable-action-tag.github-actions-mutable-action-tag
 
   tests:
     name: Tests
