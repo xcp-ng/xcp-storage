@@ -38,6 +38,7 @@ include(GNUInstallDirs)
 # ------------------------------------------------------------------------------
 
 find_package(PkgConfig REQUIRED)
+find_package(Python3 REQUIRED COMPONENTS Interpreter)
 if (NOT DEFINED SYSTEMD_SYSTEM_UNIT_DIR)
     pkg_get_variable(SYSTEMD_SYSTEM_UNIT_DIR systemd systemdsystemunitdir)
 endif()
@@ -81,4 +82,16 @@ set(DAEMON_LIST
 
 foreach(DAEMON IN LISTS DAEMON_LIST)
     add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/daemons/${DAEMON})
+endforeach()
+
+# ------------------------------------------------------------------------------
+# Connectors.
+# ------------------------------------------------------------------------------
+
+set(CONNECTOR_LIST
+    "smapi_v3"
+)
+
+foreach(CONNECTOR IN LISTS CONNECTOR_LIST)
+    add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/connectors/${CONNECTOR})
 endforeach()
