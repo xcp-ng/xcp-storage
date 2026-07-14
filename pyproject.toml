@@ -28,6 +28,7 @@ mypy_path = [
     "stubs"
 ]
 files = [
+    "connectors",
     "daemons",
     "src",
     "tests"
@@ -105,6 +106,7 @@ disable_error_code = [
 python-version = "3.14"
 search-path = ["stubs"]
 project-includes = [
+    "connectors",
     "daemons",
     "src",
     "tests"
@@ -112,6 +114,7 @@ project-includes = [
 
 [tool.ruff]
 include = [
+    "connectors/**/*.py",
     "daemons/**/*.py",
     "src/**/*.py",
     "tests/**/*.py"
@@ -172,6 +175,9 @@ select = [
     "W",      # pycodestyle: warning
 ]
 typing-modules = ["xcp_storage.typing"]
+
+[tool.ruff.lint.per-file-ignores]
+"./connectors/smapi_v3/build.py" = ["T20"]
 
 [tool.ruff.lint.isort.sections]
 "typing" = ["xcp_storage.typing"]

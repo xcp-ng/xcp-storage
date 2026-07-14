@@ -12,43 +12,42 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-cmake_minimum_required(VERSION 3.26.4)
-
 # ==============================================================================
 
-project(xcp-storage VERSION 1.0.0 LANGUAGES C)
+set(CONNECTOR_NAME "SMAPIv3")
 
-include(GNUInstallDirs)
-
-# ------------------------------------------------------------------------------
-# Dependencies.
-# ------------------------------------------------------------------------------
-
-find_package(PkgConfig REQUIRED)
-if (NOT DEFINED SYSTEMD_SYSTEM_UNIT_DIR)
-    pkg_get_variable(SYSTEMD_SYSTEM_UNIT_DIR systemd systemdsystemunitdir)
-endif()
+set(PLUGINS_DIR "${CMAKE_CURRENT_SOURCE_DIR}/plugins")
 
 # ------------------------------------------------------------------------------
-# Daemons.
+
+set(STAMP_NAME "build.stamp")
+set(STAMP_FILE "${CMAKE_CURRENT_BINARY_DIR}/${STAMP_NAME}")
+
 # ------------------------------------------------------------------------------
 
-set(DAEMON_LIST
-    "xcp-storage-rpc"
+set(PLUGINS_OUTPUT_DIR "${CMAKE_CURRENT_BINARY_DIR}/plugins")
+
+file(GLOB_RECURSE PLUGIN_SOURCE_LIST
+    CONFIGURE_DEPENDS
+    "${PLUGINS_DIR}/*.py"
 )
 
-foreach(DAEMON IN LISTS DAEMON_LIST)
-    add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/daemons/${DAEMON})
-endforeach()
-
-# ------------------------------------------------------------------------------
-# Connectors.
-# ------------------------------------------------------------------------------
-
-set(CONNECTOR_LIST
-    "smapi_v3"
+set_property(DIRECTORY APPEND PROPERTY
+    CMAKE_CONFIGURE_DEPENDS "${PLUGINS_DIR}"
 )
 
-foreach(CONNECTOR IN LISTS CONNECTOR_LIST)
-    add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/connectors/${CONNECTOR})
-endforeach()
+add_custom_command(
+    OUTPUT ${STAMP_FILE}
+    COMMAND "${CMAKE_CURRENT_SOURCE_DIR}/build.py" "${PLUGINS_OUTPUT_DIR}"
+    COMMAND ${CMAKE_COMMAND} -E touch ${STAMP_FILE}
+    DEPENDS ${PLUGIN_SOURCE_LIST} "${CMAKE_CURRENT_SOURCE_DIR}/build.py"
+    COMMENT "Generating SMAPIv3 plugins..."
+)
+add_custom_target(${CONNECTOR_NAME} ALL DEPENDS ${STAMP_FILE})
+
+# ------------------------------------------------------------------------------
+
+install(DIRECTORY "${PLUGINS_OUTPUT_DIR}/"
+    DESTINATION ${CMAKE_INSTALL_LIBEXECDIR}/xapi-storage-script
+    USE_SOURCE_PERMISSIONS
+)
