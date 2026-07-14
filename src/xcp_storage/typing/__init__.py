@@ -16,6 +16,10 @@ import contextlib
 import typing
 from typing import *  # noqa: F403
 
+# TODO(XCPNG-3032): Remove hack for python 3.11.
+# Before Python 3.7, `NoReturn` is missing from `typing.__all__`: the global import does not export it.
+from typing import NoReturn  # noqa: F401
+
 # ==============================================================================
 
 # TODO(XCPNG-3032): Remove all hacks for python 3.11.
