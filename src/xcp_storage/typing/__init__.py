@@ -20,32 +20,46 @@ from typing import *  # noqa: F403
 
 # TODO(XCPNG-3032): Remove all hacks for python 3.11.
 
-if not hasattr(typing, "Final"):
-    from typing_extensions import Final  # noqa: F401
+# Type checking is performed on recent versions of Python;
+# it must be disabled to prevent workaround branches (not hasattr...)
+# from being analyzed and causing errors. For example, with pyrefly and this code:
+#
+# ` @override
+# ` def to_json(self) -> str:
+# `  if self._json_payload is None:
+# `         self._json_payload = json.dumps(self.payload)
+# `    return self._json_payload
+#
+#   INFO Checking project configured at `/home/runner/work/xcp-storage/xcp-storage/pyproject.toml`
+# ERROR Missing argument `self` in function `xcp_storage.utils.json.rpc.JsonRpcResponse.to_json` [missing-argument]
+#   --> tests/utils/test_json_rpc.py:49:75
+if not TYPE_CHECKING:  # noqa: F405
+    if not hasattr(typing, "Final"):
+        from typing_extensions import Final  # noqa: F401
 
-if not hasattr(typing, "override"):
-    def override(method):  # type: ignore # noqa: ANN001, ANN201
-        with contextlib.suppress(AttributeError, TypeError):
-            # Set internal attr `__override__` like described in PEP 698.
-            method.__override__ = True
-        return method
+    if not hasattr(typing, "override"):
+        def override(method):  # type: ignore # noqa: ANN001, ANN201
+            with contextlib.suppress(AttributeError, TypeError):
+                # Set internal attr `__override__` like described in PEP 698.
+                method.__override__ = True
+            return method
 
-if not hasattr(typing, "Never"):
-    Never = None  # type: ignore
+    if not hasattr(typing, "Never"):
+        Never = None  # type: ignore
 
-if not hasattr(typing, "Literal"):
-    from typing_extensions import Literal  # noqa: F401, UP035
+    if not hasattr(typing, "Literal"):
+        from typing_extensions import Literal  # noqa: F401, UP035
 
-if not hasattr(typing, "ParamSpec"):
-    class _SubscriptableListMock(list):
-        def __getitem__(self, _):  # type: ignore # noqa: ANN001, ANN204
-            return self
+    if not hasattr(typing, "ParamSpec"):
+        class _SubscriptableListMock(list):
+            def __getitem__(self, _):  # type: ignore # noqa: ANN001, ANN204
+                return self
 
-        def __getattr__(self, _):  # type: ignore # noqa: ANN001, ANN204
-            return self
+            def __getattr__(self, _):  # type: ignore # noqa: ANN001, ANN204
+                return self
 
-        def __call__(self, *_args, **_kwargs):  # type: ignore # noqa: ANN002, ANN003, ANN204
-            return self
+            def __call__(self, *_args, **_kwargs):  # type: ignore # noqa: ANN002, ANN003, ANN204
+                return self
 
-    ParamSpec = _SubscriptableListMock()  # type: ignore
-    Concatenate = _SubscriptableListMock()  # type: ignore
+        ParamSpec = _SubscriptableListMock()  # type: ignore
+        Concatenate = _SubscriptableListMock()  # type: ignore
