@@ -15,12 +15,14 @@ build-backend = "setuptools.build_meta"
 [dependency-groups]
 dev = [
     "mypy>=1.4.1",
+    "pyrefly>=0.14.0",
     "pytest>=7.4.4",
     "ruff>=0.15.6",
     "semgrep>=1.46.0",
 ]
 
 [tool.mypy]
+python_version = "3.14"
 mypy_path = "stubs"
 files = [
     "src",
@@ -52,6 +54,14 @@ disable_error_code = [
     "override"
 ]
 disallow_untyped_defs = false
+
+[tool.pyrefly]
+python-version = "3.14"
+search-path = ["stubs"]
+project-includes = [
+    "src",
+    "tests"
+]
 
 [tool.ruff]
 include = [

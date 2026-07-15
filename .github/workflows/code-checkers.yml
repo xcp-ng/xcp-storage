@@ -50,6 +50,9 @@ jobs:
       - name: Mypy check
         run: uv run mypy
 
+      - name: Pyrefly check
+        run: uv run pyrefly check
+
   semgrep:
     name: Semgrep
     runs-on: ubuntu-latest
