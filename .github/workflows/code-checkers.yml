@@ -72,7 +72,7 @@ jobs:
           uv run semgrep scan \
           --config p/default \
           --config p/security-audit \
-          --config semgrep.yml \
+          --config .semgrep \
           --error \
           --exclude-rule python.flask.security.audit.directly-returned-format-string.directly-returned-format-string \
           --exclude-rule yaml.github-actions.security.github-actions-mutable-action-tag.github-actions-mutable-action-tag
