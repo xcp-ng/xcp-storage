@@ -1,0 +1,13 @@
+[Unit]
+Description=XCP-ng Storage RPC Server
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/libexec/xcp-storage/xcp-storage-rpc
+Restart=on-failure
+RestartSec=5s
+
+[Install]
+WantedBy=multi-user.target
