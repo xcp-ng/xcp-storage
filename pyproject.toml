@@ -23,7 +23,10 @@ dev = [
 
 [tool.mypy]
 python_version = "3.14"
-mypy_path = "stubs"
+mypy_path = [
+    "src",
+    "stubs"
+]
 files = [
     "src",
     "tests"
@@ -31,6 +34,7 @@ files = [
 
 disallow_untyped_defs = true
 enable_error_code = ["explicit-override"]
+explicit_package_bases = true
 ignore_missing_imports = false
 implicit_optional = false
 
