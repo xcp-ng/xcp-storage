@@ -28,6 +28,7 @@ mypy_path = [
     "stubs"
 ]
 files = [
+    "daemons",
     "src",
     "tests"
 ]
@@ -104,12 +105,14 @@ disable_error_code = [
 python-version = "3.14"
 search-path = ["stubs"]
 project-includes = [
+    "daemons",
     "src",
     "tests"
 ]
 
 [tool.ruff]
 include = [
+    "daemons/**/*.py",
     "src/**/*.py",
     "tests/**/*.py"
 ]
