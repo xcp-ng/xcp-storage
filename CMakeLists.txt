@@ -30,6 +30,24 @@ if (NOT DEFINED SYSTEMD_SYSTEM_UNIT_DIR)
 endif()
 
 # ------------------------------------------------------------------------------
+# Scripts.
+# ------------------------------------------------------------------------------
+
+set(SCRIPT_LIST
+    "xcp-linstor-manager"
+)
+
+foreach(SCRIPT IN LISTS SCRIPT_LIST)
+    install(PROGRAMS ${CMAKE_CURRENT_SOURCE_DIR}/scripts/${SCRIPT}.py
+        DESTINATION ${CMAKE_INSTALL_SBINDIR}
+        RENAME ${SCRIPT}
+        PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE
+                    GROUP_READ GROUP_EXECUTE
+                    WORLD_READ WORLD_EXECUTE
+    )
+endforeach()
+
+# ------------------------------------------------------------------------------
 # Daemons.
 # ------------------------------------------------------------------------------
 
