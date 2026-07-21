@@ -19,6 +19,8 @@ from pathlib import Path
 import re
 
 import xcp_storage.log as log
+from xcp_storage.rpc.client import RpcApiClient
+from xcp_storage.utils.json import JsonDict
 from xcp_storage.utils.process import (
     get_process_cmdline,
     run_command,
@@ -26,10 +28,13 @@ from xcp_storage.utils.process import (
 
 from xcp_storage.typing import (
     Any,
+    cast,
     Dict,
     Final,
     Iterator,
     List,
+    override,
+    Tuple,
 )
 
 # ==============================================================================
@@ -91,6 +96,40 @@ class DrbdOpener:
     cmdline: List[str]
     # The duration is expressed in milliseconds.
     open_duration: int
+
+@dataclass
+class DrbdVolumeSpecifier:
+    resource_name: str
+    volume_number: int
+
+    @staticmethod
+    def parse(specifier_str: str) -> "DrbdVolumeSpecifier":
+        """
+        Parses a DRBD volume specifier string.
+
+        Expected format: `<resource_name>/<volume_number>`
+        """
+        try:
+            resource_name, volume_number = specifier_str.rsplit("/", 1)
+            if not resource_name:
+                raise ValueError
+
+            return DrbdVolumeSpecifier(resource_name, int(volume_number))
+        except (ValueError, TypeError):
+            raise ValueError(
+                f"Invalid volume specifier: `{specifier_str}`. "
+                "Expected format: `<resource_name>/<volume_number>`."
+            ) from None
+
+    @override
+    def __str__(self) -> str:
+        return f"{self.resource_name}/{self.volume_number}"
+
+@dataclass
+class DrbdRemoteOpener:
+    opener: DrbdOpener
+    volume_specifier: DrbdVolumeSpecifier
+    peer_address: Tuple[str, int]
 
 # ------------------------------------------------------------------------------
 
@@ -173,6 +212,34 @@ class Drbd:
                 cmdline=get_process_cmdline(pid),
                 open_duration=int(groups[2])
             ))
+
+        return drbd_openers
+
+    @staticmethod
+    def get_openers(
+        peer_addresses: List[Tuple[str, int]],
+        volume_specifiers: List[DrbdVolumeSpecifier]
+    ) -> List[DrbdRemoteOpener]:
+        # Need to import here to avoid a circular dependency.
+        import xcp_storage.rpc.api as api
+
+        drbd_openers: List[DrbdRemoteOpener] = []
+
+        for addr in peer_addresses:
+            rpc_client = RpcApiClient(addr[0], addr[1])
+            response = rpc_client.call_api(
+                api.drbd.get_openers_from_specifiers,
+                volume_specifiers=[str(volume_specifier) for volume_specifier in volume_specifiers]
+            )
+
+            for volume_specifier_str, openers in response.items():
+                volume_specifier = DrbdVolumeSpecifier.parse(volume_specifier_str)
+
+                drbd_openers.extend(DrbdRemoteOpener(
+                    opener=DrbdOpener(**cast(Dict[str, Any], opener_json)),
+                    volume_specifier=volume_specifier,
+                    peer_address=addr
+                ) for opener_json in cast(List[JsonDict], openers))
 
         return drbd_openers
 
