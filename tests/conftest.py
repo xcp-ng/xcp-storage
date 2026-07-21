@@ -12,6 +12,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+import contextlib
 import threading
 
 import pytest
@@ -26,6 +27,7 @@ from xcp_storage.rpc.server import RpcApiServer
 from xcp_storage.typing import (
     Final,
     Generator,
+    List,
     Optional,
 )
 
@@ -38,8 +40,8 @@ SERVER_THREAD_SHUTDOWN_TIMEOUT: Final = 5.0
 
 # ------------------------------------------------------------------------------
 
-@pytest.fixture
-def rpc_server(ssl_contexts: Optional[TlsContexts]) -> Generator[RpcApiServer, None, None]: # noqa: F811
+@contextlib.contextmanager
+def _rpc_server(ssl_contexts: Optional[TlsContexts]) -> Generator[RpcApiServer, None, None]: # noqa: F811
     server = RpcApiServer("127.0.0.1", 0, ssl_context=ssl_contexts.server if ssl_contexts else None)
     server_thread = threading.Thread(target=server.run, daemon=True)
     server_thread.start()
@@ -50,3 +52,17 @@ def rpc_server(ssl_contexts: Optional[TlsContexts]) -> Generator[RpcApiServer, N
         server.stop(timeout=SERVER_SHUTDOWN_TIMEOUT)
         server_thread.join(timeout=SERVER_THREAD_SHUTDOWN_TIMEOUT)
         assert not server_thread.is_alive(), "Server thread still alive."
+
+@pytest.fixture
+def rpc_server(ssl_contexts: Optional[TlsContexts]) -> Generator[RpcApiServer, None, None]: # noqa: F811
+    with _rpc_server(ssl_contexts) as server:
+        yield server
+
+@pytest.fixture
+def rpc_servers(
+    request: pytest.FixtureRequest,
+    ssl_contexts: Optional[TlsContexts] # noqa: F811
+) -> Generator[List[RpcApiServer], None, None]:
+    with contextlib.ExitStack() as stack:
+        servers = [stack.enter_context(_rpc_server(ssl_contexts)) for _ in range(request.param)]
+        yield servers
