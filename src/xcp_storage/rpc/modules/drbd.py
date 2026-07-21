@@ -14,7 +14,7 @@
 
 from dataclasses import asdict
 
-from xcp_storage.backends.drbd import Drbd
+from xcp_storage.backends.drbd import Drbd, DrbdVolumeSpecifier
 from xcp_storage.rpc.dispatcher import ApiDispatcher
 from xcp_storage.utils.json import JsonDict
 
@@ -38,3 +38,12 @@ def get_openers(resource_name: str, volume_number: int) -> List[JsonDict]:
     if PYREFLY and not MYPY:
         assert_type(openers, List[Dict[str, Union[int, str, List[str]]]])
     return cast(List[JsonDict], openers)
+
+@ApiDispatcher.method
+def get_openers_from_specifiers(volume_specifiers: List[str]) -> JsonDict:
+    openers = {}
+    for volume_specifier_str in volume_specifiers:
+        volume_specifier = DrbdVolumeSpecifier.parse(volume_specifier_str)
+        openers[volume_specifier_str] = get_openers(volume_specifier.resource_name, volume_specifier.volume_number)
+
+    return cast(JsonDict, openers)
