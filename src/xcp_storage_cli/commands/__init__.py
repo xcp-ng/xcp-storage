@@ -15,12 +15,15 @@
 import argparse
 
 from xcp_storage_cli.commands.command import Command
+from xcp_storage_cli.commands.llcall import LlcallCommand
 
 from xcp_storage.typing import Final, List
 
 # ==============================================================================
 
-_ALL_COMMANDS: Final[List[Command]] = []
+_ALL_COMMANDS: Final[List[Command]] = [
+    LlcallCommand(),
+]
 
 # ------------------------------------------------------------------------------
 
