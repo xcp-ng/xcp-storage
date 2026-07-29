@@ -12,6 +12,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+import contextlib
 import threading
 from typing import Generator
 
@@ -19,10 +20,12 @@ import pytest
 
 from xcp_storage.rpc.server import RpcApiServer
 
+from xcp_storage.typing import List
+
 # ==============================================================================
 
-@pytest.fixture
-def rpc_server() -> Generator[RpcApiServer, None, None]:
+@contextlib.contextmanager
+def _rpc_server() -> Generator[RpcApiServer, None, None]:
     server = RpcApiServer("127.0.0.1", 0)
 
     server_thread = threading.Thread(target=server.run, daemon=True)
@@ -33,3 +36,14 @@ def rpc_server() -> Generator[RpcApiServer, None, None]:
 
     server.stop()
     server_thread.join(timeout=2.0)
+
+@pytest.fixture
+def rpc_server() -> Generator[RpcApiServer, None, None]:
+    with _rpc_server() as server:
+        yield server
+
+@pytest.fixture
+def rpc_servers(request: pytest.FixtureRequest) -> Generator[List[RpcApiServer], None, None]:
+    with contextlib.ExitStack() as stack:
+        servers = [stack.enter_context(_rpc_server()) for _ in range(request.param)]
+        yield servers

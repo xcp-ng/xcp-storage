@@ -12,6 +12,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+import copy
 from pathlib import Path
 from unittest.mock import (
     MagicMock,
@@ -23,12 +24,19 @@ import pytest
 from xcp_storage.backends.drbd import (
     Drbd,
     DrbdOpener,
+    DrbdRemoteOpener,
+    DrbdVolumeSpecifier,
 )
+from xcp_storage.network.tcp_client import TcpClientError
+from xcp_storage.rpc.server import RpcApiServer
+from xcp_storage.utils.json.rpc.client import JsonRpcClient
 
 from xcp_storage.typing import (
     Any,
     Dict,
+    Final,
     List,
+    Tuple,
 )
 
 # ==============================================================================
@@ -184,6 +192,140 @@ class TestGetDrbdLocalOpeners:
             "Unable to get DRBD openers of volume `res-test/0`: "
             f"`[Errno 2] No such file or directory: '{openers_path}'`."
         ) in caplog.text
+
+# ------------------------------------------------------------------------------
+
+class TestDrbdVolumeSpecifier:
+    def test_parse_ok(self) -> None:
+        volume_specifier = DrbdVolumeSpecifier.parse("res-test/0")
+
+        assert volume_specifier.resource_name == "res-test"
+        assert volume_specifier.volume_number == 0
+
+    def test_parse_multi_slash(self) -> None:
+        volume_specifier = DrbdVolumeSpecifier.parse("res-test/hello/0")
+
+        assert volume_specifier.resource_name == "res-test/hello"
+        assert volume_specifier.volume_number == 0
+
+    def test_parse_fail(self) -> None:
+        with pytest.raises(ValueError, match="Invalid volume specifier: `res-test`. " \
+                           "Expected format: `<resource_name>/<volume_number>`."):
+            DrbdVolumeSpecifier.parse("res-test")
+
+    def test_str(self) -> None:
+        volume_specifier = DrbdVolumeSpecifier(resource_name="res-test", volume_number=0)
+        assert str(volume_specifier) == "res-test/0"
+
+# ------------------------------------------------------------------------------
+
+@patch.object(Drbd, "get_local_openers")
+class TestGetDrbdOpeners:
+    SERVER_COUNT: Final = 3
+    RESOURCE_COUNT: Final = 2
+
+    @pytest.mark.parametrize("rpc_servers", [SERVER_COUNT], indirect=True)
+    def test_multi_openers(self, mock_get_local_openers: MagicMock, rpc_servers: List[RpcApiServer]) -> None:
+        base_data: List[DrbdOpener] = [DrbdOpener(
+            pid=82584,
+            process_name="tapback",
+            cmdline=["tapback", "-d", "-x", "1"],
+            open_duration=86143
+        ), DrbdOpener(
+            pid=83388,
+            process_name="python",
+            cmdline=["storage"],
+            open_duration=1877
+        )]
+
+        peer_addresses = [(rpc_server.address, rpc_server.port) for rpc_server in rpc_servers]
+        volume_specifiers = [
+            DrbdVolumeSpecifier(resource_name=f"res-test-{i}", volume_number=0)
+            for i in range(self.RESOURCE_COUNT)
+        ]
+
+        data: List[List[DrbdOpener]] = []
+        expected: List[DrbdRemoteOpener] = []
+
+        for i in range(self.SERVER_COUNT):
+            for j in range(self.RESOURCE_COUNT):
+                data.append(copy.deepcopy(base_data))
+
+                # Make some value unique for each server/resource pair.
+                for opener in data[-1]:
+                    opener.pid += 100000 * (j + i * self.RESOURCE_COUNT)
+                    expected.append(DrbdRemoteOpener(
+                        opener=opener,
+                        volume_specifier=volume_specifiers[j],
+                        peer_address=peer_addresses[i]
+                    ))
+
+        mock_get_local_openers.side_effect = data
+        openers = Drbd.get_openers(peer_addresses, volume_specifiers)
+
+        assert len(openers) == len(expected)
+        assert openers == expected
+
+    @pytest.mark.parametrize("rpc_servers", [SERVER_COUNT], indirect=True)
+    def test_connection_refused(self, mock_get_local_openers: MagicMock, rpc_servers: List[RpcApiServer]) -> None:
+        data: List[DrbdOpener] = [DrbdOpener(
+            pid=82584,
+            process_name="tapback",
+            cmdline=["tapback", "-d", "-x", "1"],
+            open_duration=86143
+        )]
+
+        peer_addresses = [(rpc_server.address, rpc_server.port) for rpc_server in rpc_servers]
+        volume_specifiers = [
+            DrbdVolumeSpecifier(resource_name=f"res-test-{i}", volume_number=0)
+            for i in range(self.RESOURCE_COUNT)
+        ]
+
+        peer_addresses.append(("invalid", 0))
+        mock_get_local_openers.return_value = data
+
+        original_connect = JsonRpcClient.connect
+        def side_effect_connect(self: JsonRpcClient, *args: Any, **kwargs: Any) -> None: # noqa: ANN401
+            if self.address == "invalid":
+                raise TcpClientError("Unable to connect to server.")
+
+            original_connect(self, *args, **kwargs)
+
+        with patch.object(JsonRpcClient, "connect", side_effect=side_effect_connect, autospec=True), \
+            pytest.raises(TcpClientError):
+            Drbd.get_openers(peer_addresses, volume_specifiers)
+
+    def test_no_peer(self, mock_get_local_openers: MagicMock) -> None:
+        data: List[DrbdOpener] = [DrbdOpener(
+            pid=82584,
+            process_name="tapback",
+            cmdline=["tapback", "-d", "-x", "1"],
+            open_duration=86143
+        )]
+
+        peer_addresses: List[Tuple[str, int]] = []
+        volume_specifiers = [
+            DrbdVolumeSpecifier(resource_name=f"res-test-{i}", volume_number=0)
+            for i in range(self.RESOURCE_COUNT)
+        ]
+
+        mock_get_local_openers.return_value = data
+        assert Drbd.get_openers(peer_addresses, volume_specifiers) == []
+
+    @pytest.mark.parametrize("rpc_servers", [SERVER_COUNT], indirect=True)
+    def test_no_volume(self, mock_get_local_openers: MagicMock, rpc_servers: List[RpcApiServer]) -> None:
+        data: List[DrbdOpener] = [DrbdOpener(
+            pid=82584,
+            process_name="tapback",
+            cmdline=["tapback", "-d", "-x", "1"],
+            open_duration=86143
+        )]
+
+        peer_addresses = [(rpc_server.address, rpc_server.port) for rpc_server in rpc_servers]
+        volume_specifiers: List[DrbdVolumeSpecifier] = []
+
+        mock_get_local_openers.return_value = data
+        assert Drbd.get_openers(peer_addresses, volume_specifiers) == []
 
 # ------------------------------------------------------------------------------
 

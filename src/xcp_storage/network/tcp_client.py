@@ -74,6 +74,14 @@ class TcpClient(contextlib.AbstractContextManager):
             self.disconnect()
 
     @property
+    def address(self) -> str:
+        return self._address
+
+    @property
+    def port(self) -> int:
+        return self._port
+
+    @property
     def socket(self) -> Optional[Socket]:
         return self._socket
 

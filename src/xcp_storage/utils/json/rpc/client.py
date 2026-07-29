@@ -89,6 +89,14 @@ class JsonRpcClient:
         self._tcp_client.__exit__(exc_type, exc_value, traceback)
 
     @property
+    def address(self) -> str:
+        return self._tcp_client.address
+
+    @property
+    def port(self) -> int:
+        return self._tcp_client.port
+
+    @property
     def connected(self) -> bool:
         return self._tcp_client.connected
 
