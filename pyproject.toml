@@ -8,6 +8,9 @@ dynamic = [
 ]
 requires-python = ">=3.7" # TODO(XCPNG-3032): Change it for modern python.
 
+[project.scripts]
+xcp-storage-cli = "xcp_storage_cli:main"
+
 [build-system]
 requires = ["setuptools>=40"]
 build-backend = "setuptools.build_meta"
