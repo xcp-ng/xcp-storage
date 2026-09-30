@@ -71,6 +71,28 @@ def has_iptables_rule(rule: List[str]) -> bool:
 
 # ------------------------------------------------------------------------------
 
+def _ensure_iptables_chain_exists(chain: str) -> bool:
+    try:
+        _stdout, _stderr, ret_code = run_command([_EXEC_PATH_IPTABLES, "-N", chain], simple=False)
+        if _is_fatal_iptables_code(ret_code):
+            raise IptablesError(f"Failed to test existence of iptables chain `{chain}`: `{_stderr}`.", ret_code)
+        updated = not ret_code
+
+        return_rule = [chain, "-j", "RETURN"]
+        if not has_iptables_rule(return_rule):
+            run_command([_EXEC_PATH_IPTABLES, "-A"] + return_rule, expected_ret_code=0)
+            updated = True
+
+        jump_rule = [_MAIN_FIREWALL_INPUT_CHAIN, "-j", chain]
+        if not has_iptables_rule(jump_rule):
+            run_command([_EXEC_PATH_IPTABLES, "-I"] + jump_rule, expected_ret_code=0)
+            updated = True
+    except CommandError as e:
+        raise IptablesError(f"Failed to set up iptables chain `{chain}`: `{e.reason}`.", e.code) from None
+    return updated
+
+# ------------------------------------------------------------------------------
+
 def _update_iptables_ports(protocol: str, str_ports: str, *, open_ports: bool, stateful: bool, chain: str) -> None:
     # 1. Check if the rule is present.
     rule = [chain, "-p", protocol]
@@ -83,16 +105,8 @@ def _update_iptables_ports(protocol: str, str_ports: str, *, open_ports: bool, s
 
     # 2. Open or close.
     if open_ports:
+        _ensure_iptables_chain_exists(chain)
         try:
-            _stdout, _stderr, ret_code = run_command([_EXEC_PATH_IPTABLES, "-N", chain], simple=False)
-            if _is_fatal_iptables_code(ret_code):
-                raise IptablesError(f"Failed to test existence of iptables chain `{chain}`: `{_stderr}`.", ret_code)
-
-            if not ret_code:
-                # Create chain if necessary.
-                run_command([_EXEC_PATH_IPTABLES, "-A", chain, "-j", "RETURN"], expected_ret_code=0)
-                run_command([_EXEC_PATH_IPTABLES, "-I", _MAIN_FIREWALL_INPUT_CHAIN, "-j", chain], expected_ret_code=0)
-            # Create rule.
             run_command([_EXEC_PATH_IPTABLES, "-I"] + rule, expected_ret_code=0)
         except CommandError as e:
             raise IptablesError(
