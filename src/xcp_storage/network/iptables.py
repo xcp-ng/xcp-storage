@@ -48,12 +48,26 @@ def _save_iptables_changes() -> None:
 
 # ------------------------------------------------------------------------------
 
+def _is_fatal_iptables_code(code: int) -> bool:
+    # Documented by manual of iptables:
+    # 0 for correct exit.
+    # 2 for invalid command.
+    # 3 for incompatibility between kernel and user space.
+    # 4 for busy lock, failing memory allocation or error messages from kernel.
+    # 1 for other errors.
+    return code not in (0, 1)
+
+# ------------------------------------------------------------------------------
+
 def has_iptables_rule(rule: List[str]) -> bool:
+    code: Optional[int]
     try:
-        _stdout, _stderr, ret_code = run_command([_EXEC_PATH_IPTABLES, "-C"] + rule, simple=False)
-        return not ret_code
+        _stdout, reason, code = run_command([_EXEC_PATH_IPTABLES, "-C"] + rule, simple=False)
+        if not _is_fatal_iptables_code(code):
+            return not code
     except CommandError as e:
-        raise IptablesError(e.reason, e.code) from None
+        reason, code = e.reason, e.code
+    raise IptablesError(f"Failed to test existence of iptables rule `{rule}`: `{reason}`.", code)
 
 # ------------------------------------------------------------------------------
 
@@ -71,6 +85,9 @@ def _update_iptables_ports(protocol: str, str_ports: str, *, open_ports: bool, s
     if open_ports:
         try:
             _stdout, _stderr, ret_code = run_command([_EXEC_PATH_IPTABLES, "-N", chain], simple=False)
+            if _is_fatal_iptables_code(ret_code):
+                raise IptablesError(f"Failed to test existence of iptables chain `{chain}`: `{_stderr}`.", ret_code)
+
             if not ret_code:
                 # Create chain if necessary.
                 run_command([_EXEC_PATH_IPTABLES, "-A", chain, "-j", "RETURN"], expected_ret_code=0)
