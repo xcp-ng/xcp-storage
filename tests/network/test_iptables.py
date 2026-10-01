@@ -19,21 +19,25 @@ from unittest.mock import (
     patch,
 )
 
+import pytest
+
 from xcp_storage.network.iptables import (
     _EXEC_PATH_IPTABLES,
     _EXEC_PATH_SERVICE,
     _MAIN_FIREWALL_INPUT_CHAIN,
     _PROTOCOL_TCP,
     DEFAULT_FIREWALL_INPUT_CHAIN,
+    IptablesError,
     update_iptables_tcp_port,
 )
-from xcp_storage.utils.process import CommandResultType
+from xcp_storage.utils.process import CommandError, CommandResultType
 
 from xcp_storage.typing import (
     Callable,
     cast,
     Final,
     List,
+    Optional,
     ParamSpec,
 )
 
@@ -283,3 +287,92 @@ class TestIptablesTcpPort:
 
         mock_run_command.assert_has_calls(expected_calls)
         assert mock_run_command.call_count == len(expected_calls)
+
+# ------------------------------------------------------------------------------
+
+def run_fail_command_side_effect_factory(
+    command: List[str],
+    *,
+    error: Optional[CommandError] = None,
+    has_port_rule: bool = False
+) -> Callable[P, CommandResultType]:
+    default_side_effect: Callable[P, CommandResultType] = run_command_side_effect_factory(
+        has_chain=False, has_port_rule=has_port_rule
+    )
+
+    def impl(*args: P.args, **kwargs: P.kwargs) -> CommandResultType:
+        cmd_args = cast(List[str], args[0])
+        # Mock default side effect.
+        if cmd_args != command:
+            return default_side_effect(*args, **kwargs)
+        # Mock error.
+        if error is not None:
+            raise error
+        # Use 3 as default error, like described by iptables manual: incompatibility between kernel and user space.
+        return ("", "", cast(int, 3))
+    return impl
+
+# ------------------------------------------------------------------------------
+
+@patch("xcp_storage.network.iptables.run_command")
+class TestIptablesTcpPortErrors:
+    TEST_PORT: Final = 80
+    TEST_RULE: Final = get_tcp_rule(str(TEST_PORT))
+
+    def test_open_port_create_chain_fatal_code(self, mock_run_command: MagicMock) -> None:
+        mock_run_command.side_effect = run_fail_command_side_effect_factory(get_has_chain_cmd())
+
+        with pytest.raises(IptablesError, match="Failed to test existence of iptables chain"):
+            update_iptables_tcp_port(self.TEST_PORT, open_port=True)
+
+    def test_open_port_has_rule_fatal_code(self, mock_run_command: MagicMock) -> None:
+        mock_run_command.side_effect = run_fail_command_side_effect_factory(get_has_rule_cmd(self.TEST_RULE))
+
+        with pytest.raises(IptablesError, match="Failed to test existence of iptables rule"):
+            update_iptables_tcp_port(self.TEST_PORT, open_port=True)
+
+    def test_open_port_has_rule_command_error(self, mock_run_command: MagicMock) -> None:
+        mock_run_command.side_effect = run_fail_command_side_effect_factory(
+            get_has_rule_cmd(self.TEST_RULE),
+            error=CommandError(None, "", reason="")
+        )
+
+        with pytest.raises(IptablesError, match="Failed to test existence of iptables rule"):
+            update_iptables_tcp_port(self.TEST_PORT, open_port=True)
+
+    def test_open_port_insert_jump_rule_command_error(self, mock_run_command: MagicMock) -> None:
+        mock_run_command.side_effect = run_fail_command_side_effect_factory(
+            get_insert_rule_cmd(get_jump_rule()),
+            error=CommandError(1, "", reason="")
+        )
+
+        with pytest.raises(IptablesError, match="Failed to set up iptables chain"):
+            update_iptables_tcp_port(self.TEST_PORT, open_port=True)
+
+    def test_open_port_insert_port_rule_command_error(self, mock_run_command: MagicMock) -> None:
+        mock_run_command.side_effect = run_fail_command_side_effect_factory(
+            get_insert_rule_cmd(self.TEST_RULE),
+            error=CommandError(1, "", reason="")
+        )
+
+        with pytest.raises(IptablesError, match="Failed to open TCP port"):
+            update_iptables_tcp_port(self.TEST_PORT, open_port=True)
+
+    def test_close_port_remove_port_rule_command_error(self, mock_run_command: MagicMock) -> None:
+        mock_run_command.side_effect = run_fail_command_side_effect_factory(
+            get_destroy_rule_cmd(self.TEST_RULE),
+            error=CommandError(1, "", reason=""),
+            has_port_rule=True
+        )
+
+        with pytest.raises(IptablesError, match="Failed to close TCP port"):
+            update_iptables_tcp_port(self.TEST_PORT, open_port=False)
+
+    def test_save_iptables_command_error(self, mock_run_command: MagicMock) -> None:
+        mock_run_command.side_effect = run_fail_command_side_effect_factory(
+            get_save_iptables_cmd(),
+            error=CommandError(1, "", reason="")
+        )
+
+        with pytest.raises(IptablesError, match="Failed to save iptables changes"):
+            update_iptables_tcp_port(self.TEST_PORT, open_port=True)
