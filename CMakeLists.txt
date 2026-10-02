@@ -34,6 +34,7 @@ endif()
 # ------------------------------------------------------------------------------
 
 set(SCRIPT_LIST
+    "lvm-thin-helper"
     "xcp-linstor-manager"
 )
 
