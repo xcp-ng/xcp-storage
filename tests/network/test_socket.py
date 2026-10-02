@@ -30,6 +30,7 @@ from xcp_storage.network.socket import (
     format_address,
     get_ip_address,
     get_socket_family_str,
+    get_socket_port,
     Socket,
     socket_receive,
     socket_send,
@@ -201,6 +202,20 @@ class TestSocketCreate:
         mock_socket = mock_socket_class.return_value
         mock_socket.family = family_code
         assert get_socket_family_str(mock_socket) == family_str
+
+# ------------------------------------------------------------------------------
+
+class TestSocketPort:
+    def test_get_socket_port(self) -> None:
+        with socket.socket() as sock:
+            sock.bind(("127.0.0.1", 0))
+            port = get_socket_port(sock)
+            assert port is not None and port > 0
+
+    def test_get_socket_port_closed_socket(self) -> None:
+        with socket.socket() as sock:
+            sock.close()
+            assert get_socket_port(sock) is None
 
 # ------------------------------------------------------------------------------
 
