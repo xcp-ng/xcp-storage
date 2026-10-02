@@ -29,6 +29,7 @@ from xcp_storage.network.iptables import (
     DEFAULT_FIREWALL_INPUT_CHAIN,
     IptablesError,
     update_iptables_tcp_port,
+    update_iptables_tcp_port_range,
 )
 from xcp_storage.utils.process import CommandError, CommandResultType
 
@@ -37,8 +38,11 @@ from xcp_storage.typing import (
     cast,
     Final,
     List,
+    NamedTuple,
     Optional,
     ParamSpec,
+    Tuple,
+    Union,
 )
 
 P = ParamSpec("P")
@@ -53,7 +57,7 @@ def get_jump_rule(chain: str = DEFAULT_FIREWALL_INPUT_CHAIN) -> List[str]:
 
 def get_rule(
     protocol: str,
-    str_ports: str,
+    ports_str: str,
     *,
     stateful: bool = True,
     chain: str = DEFAULT_FIREWALL_INPUT_CHAIN
@@ -61,11 +65,11 @@ def get_rule(
     rule = [chain, "-p", protocol]
     if stateful:
         rule += ["-m", "conntrack", "--ctstate", "NEW", "-m", protocol]
-    rule += ["--dport", str_ports, "-j", "ACCEPT"]
+    rule += ["--dport", ports_str, "-j", "ACCEPT"]
     return rule
 
-def get_tcp_rule(str_ports: str, *, stateful: bool = True, chain: str = DEFAULT_FIREWALL_INPUT_CHAIN) -> List[str]:
-    return get_rule(_PROTOCOL_TCP, str_ports, stateful=stateful, chain=chain)
+def get_tcp_rule(ports_str: str, *, stateful: bool = True, chain: str = DEFAULT_FIREWALL_INPUT_CHAIN) -> List[str]:
+    return get_rule(_PROTOCOL_TCP, ports_str, stateful=stateful, chain=chain)
 
 # ------------------------------------------------------------------------------
 
@@ -118,6 +122,26 @@ def get_save_iptables_call() -> _Call:
 
 # ------------------------------------------------------------------------------
 
+class PortUpdateSpec(NamedTuple):
+    """
+    A TCP port or range that must be tested.
+    """
+
+    tcp_rule: List[str]
+    ports_arg: Union[int, Tuple[int, int]]
+    target: Callable[..., None]
+    open_port_arg_name: str
+
+    def update_iptables_tcp_port(self, *, open_port: bool) -> None:
+        self.target(self.ports_arg, **{self.open_port_arg_name: open_port})
+
+TEST_SPECS: Final = [
+    PortUpdateSpec(get_tcp_rule("80"), 80, update_iptables_tcp_port, "open_port"),
+    PortUpdateSpec(get_tcp_rule("80:90"), (80, 90), update_iptables_tcp_port_range, "open_ports")
+]
+
+# ------------------------------------------------------------------------------
+
 def run_command_side_effect_factory(
     *,
     has_chain: bool,
@@ -159,105 +183,103 @@ def run_command_side_effect_factory(
 # ------------------------------------------------------------------------------
 
 @patch("xcp_storage.network.iptables.run_command")
+@pytest.mark.parametrize("spec", TEST_SPECS)
 class TestIptablesTcpPort:
-    TEST_PORT: Final = 80
-    TEST_RULE: Final = get_tcp_rule(str(TEST_PORT))
-
-    def test_open_port_without_existing_chain(self, mock_run_command: MagicMock) -> None:
+    def test_open_port_without_existing_chain(self, mock_run_command: MagicMock, spec: PortUpdateSpec) -> None:
         mock_run_command.side_effect = run_command_side_effect_factory(has_chain=False)
         expected_calls = [
-            get_has_rule_call(self.TEST_RULE),
+            get_has_rule_call(spec.tcp_rule),
             get_has_chain_call(),
             get_has_return_rule_call(),
             get_add_return_rule_call(),
             get_has_jump_rule_call(),
             get_insert_jump_rule_call(),
-            get_insert_rule_call(self.TEST_RULE),
+            get_insert_rule_call(spec.tcp_rule),
             get_save_iptables_call()
         ]
 
-        update_iptables_tcp_port(self.TEST_PORT, open_port=True)
+        spec.update_iptables_tcp_port(open_port=True)
 
         mock_run_command.assert_has_calls(expected_calls)
         assert mock_run_command.call_count == len(expected_calls)
 
-    def test_open_port_with_existing_chain(self, mock_run_command: MagicMock) -> None:
+    def test_open_port_with_existing_chain(self, mock_run_command: MagicMock, spec: PortUpdateSpec) -> None:
         mock_run_command.side_effect = run_command_side_effect_factory(
             has_chain=True,
             has_return_rule=True,
             has_jump_rule=True
         )
         expected_calls = [
-            get_has_rule_call(self.TEST_RULE),
+            get_has_rule_call(spec.tcp_rule),
             get_has_chain_call(),
             get_has_return_rule_call(),
             get_has_jump_rule_call(),
-            get_insert_rule_call(self.TEST_RULE),
+            get_insert_rule_call(spec.tcp_rule),
             get_save_iptables_call()
         ]
 
-        update_iptables_tcp_port(self.TEST_PORT, open_port=True)
+        spec.update_iptables_tcp_port(open_port=True)
 
         mock_run_command.assert_has_calls(expected_calls)
         assert mock_run_command.call_count == len(expected_calls)
 
-    def test_open_port_with_missing_return_rule(self, mock_run_command: MagicMock) -> None:
+    def test_open_port_with_missing_return_rule(self, mock_run_command: MagicMock, spec: PortUpdateSpec) -> None:
         mock_run_command.side_effect = run_command_side_effect_factory(
             has_chain=True,
             has_return_rule=False,
             has_jump_rule=True
         )
         expected_calls = [
-            get_has_rule_call(self.TEST_RULE),
+            get_has_rule_call(spec.tcp_rule),
             get_has_chain_call(),
             get_has_return_rule_call(),
             get_add_return_rule_call(),
             get_has_jump_rule_call(),
-            get_insert_rule_call(self.TEST_RULE),
+            get_insert_rule_call(spec.tcp_rule),
             get_save_iptables_call()
         ]
 
-        update_iptables_tcp_port(self.TEST_PORT, open_port=True)
+        spec.update_iptables_tcp_port(open_port=True)
 
         mock_run_command.assert_has_calls(expected_calls)
         assert mock_run_command.call_count == len(expected_calls)
 
-    def test_open_port_with_missing_jump_rule(self, mock_run_command: MagicMock) -> None:
+    def test_open_port_with_missing_jump_rule(self, mock_run_command: MagicMock, spec: PortUpdateSpec) -> None:
         mock_run_command.side_effect = run_command_side_effect_factory(
             has_chain=True,
             has_return_rule=True,
             has_jump_rule=False
         )
         expected_calls = [
-            get_has_rule_call(self.TEST_RULE),
+            get_has_rule_call(spec.tcp_rule),
             get_has_chain_call(),
             get_has_return_rule_call(),
             get_has_jump_rule_call(),
             get_insert_jump_rule_call(),
-            get_insert_rule_call(self.TEST_RULE),
+            get_insert_rule_call(spec.tcp_rule),
             get_save_iptables_call()
         ]
 
-        update_iptables_tcp_port(self.TEST_PORT, open_port=True)
+        spec.update_iptables_tcp_port(open_port=True)
 
         mock_run_command.assert_has_calls(expected_calls)
         assert mock_run_command.call_count == len(expected_calls)
 
-    def test_open_port_with_existing_port_rule(self, mock_run_command: MagicMock) -> None:
+    def test_open_port_with_existing_port_rule(self, mock_run_command: MagicMock, spec: PortUpdateSpec) -> None:
         mock_run_command.side_effect = run_command_side_effect_factory(
             has_chain=True,
             has_return_rule=True,
             has_jump_rule=True,
             has_port_rule=True
         )
-        expected_calls = [get_has_rule_call(self.TEST_RULE)]
+        expected_calls = [get_has_rule_call(spec.tcp_rule)]
 
-        update_iptables_tcp_port(self.TEST_PORT, open_port=True)
+        spec.update_iptables_tcp_port(open_port=True)
 
         mock_run_command.assert_has_calls(expected_calls)
         assert mock_run_command.call_count == len(expected_calls)
 
-    def test_close_port_with_existing_port_rule(self, mock_run_command: MagicMock) -> None:
+    def test_close_port_with_existing_port_rule(self, mock_run_command: MagicMock, spec: PortUpdateSpec) -> None:
         mock_run_command.side_effect = run_command_side_effect_factory(
             has_chain=True,
             has_return_rule=True,
@@ -265,25 +287,25 @@ class TestIptablesTcpPort:
             has_port_rule=True
         )
         expected_calls = [
-            get_has_rule_call(self.TEST_RULE),
-            get_destroy_rule_call(self.TEST_RULE),
+            get_has_rule_call(spec.tcp_rule),
+            get_destroy_rule_call(spec.tcp_rule),
             get_save_iptables_call()
         ]
 
-        update_iptables_tcp_port(self.TEST_PORT, open_port=False)
+        spec.update_iptables_tcp_port(open_port=False)
 
         mock_run_command.assert_has_calls(expected_calls)
         assert mock_run_command.call_count == len(expected_calls)
 
-    def test_close_port_without_existing_port_rule(self, mock_run_command: MagicMock) -> None:
+    def test_close_port_without_existing_port_rule(self, mock_run_command: MagicMock, spec: PortUpdateSpec) -> None:
         mock_run_command.side_effect = run_command_side_effect_factory(
             has_chain=True,
             has_return_rule=True,
             has_jump_rule=True
         )
-        expected_calls = [get_has_rule_call(self.TEST_RULE)]
+        expected_calls = [get_has_rule_call(spec.tcp_rule)]
 
-        update_iptables_tcp_port(self.TEST_PORT, open_port=False)
+        spec.update_iptables_tcp_port(open_port=False)
 
         mock_run_command.assert_has_calls(expected_calls)
         assert mock_run_command.call_count == len(expected_calls)
@@ -315,64 +337,64 @@ def run_fail_command_side_effect_factory(
 # ------------------------------------------------------------------------------
 
 @patch("xcp_storage.network.iptables.run_command")
+@pytest.mark.parametrize("spec", TEST_SPECS)
 class TestIptablesTcpPortErrors:
-    TEST_PORT: Final = 80
-    TEST_RULE: Final = get_tcp_rule(str(TEST_PORT))
-
-    def test_open_port_create_chain_fatal_code(self, mock_run_command: MagicMock) -> None:
+    def test_open_port_create_chain_fatal_code(self, mock_run_command: MagicMock, spec: PortUpdateSpec) -> None:
         mock_run_command.side_effect = run_fail_command_side_effect_factory(get_has_chain_cmd())
 
         with pytest.raises(IptablesError, match="Failed to test existence of iptables chain"):
-            update_iptables_tcp_port(self.TEST_PORT, open_port=True)
+            spec.update_iptables_tcp_port(open_port=True)
 
-    def test_open_port_has_rule_fatal_code(self, mock_run_command: MagicMock) -> None:
-        mock_run_command.side_effect = run_fail_command_side_effect_factory(get_has_rule_cmd(self.TEST_RULE))
+    def test_open_port_has_rule_fatal_code(self, mock_run_command: MagicMock, spec: PortUpdateSpec) -> None:
+        mock_run_command.side_effect = run_fail_command_side_effect_factory(
+            get_has_rule_cmd(spec.tcp_rule)
+        )
 
         with pytest.raises(IptablesError, match="Failed to test existence of iptables rule"):
-            update_iptables_tcp_port(self.TEST_PORT, open_port=True)
+            spec.update_iptables_tcp_port(open_port=True)
 
-    def test_open_port_has_rule_command_error(self, mock_run_command: MagicMock) -> None:
+    def test_open_port_has_rule_command_error(self, mock_run_command: MagicMock, spec: PortUpdateSpec) -> None:
         mock_run_command.side_effect = run_fail_command_side_effect_factory(
-            get_has_rule_cmd(self.TEST_RULE),
+            get_has_rule_cmd(spec.tcp_rule),
             error=CommandError(None, "", reason="")
         )
 
         with pytest.raises(IptablesError, match="Failed to test existence of iptables rule"):
-            update_iptables_tcp_port(self.TEST_PORT, open_port=True)
+            spec.update_iptables_tcp_port(open_port=True)
 
-    def test_open_port_insert_jump_rule_command_error(self, mock_run_command: MagicMock) -> None:
+    def test_open_port_insert_jump_rule_command_error(self, mock_run_command: MagicMock, spec: PortUpdateSpec) -> None:
         mock_run_command.side_effect = run_fail_command_side_effect_factory(
             get_insert_rule_cmd(get_jump_rule()),
             error=CommandError(1, "", reason="")
         )
 
         with pytest.raises(IptablesError, match="Failed to set up iptables chain"):
-            update_iptables_tcp_port(self.TEST_PORT, open_port=True)
+            spec.update_iptables_tcp_port(open_port=True)
 
-    def test_open_port_insert_port_rule_command_error(self, mock_run_command: MagicMock) -> None:
+    def test_open_port_insert_port_rule_command_error(self, mock_run_command: MagicMock, spec: PortUpdateSpec) -> None:
         mock_run_command.side_effect = run_fail_command_side_effect_factory(
-            get_insert_rule_cmd(self.TEST_RULE),
+            get_insert_rule_cmd(spec.tcp_rule),
             error=CommandError(1, "", reason="")
         )
 
         with pytest.raises(IptablesError, match="Failed to open TCP port"):
-            update_iptables_tcp_port(self.TEST_PORT, open_port=True)
+            spec.update_iptables_tcp_port(open_port=True)
 
-    def test_close_port_remove_port_rule_command_error(self, mock_run_command: MagicMock) -> None:
+    def test_close_port_remove_port_rule_command_error(self, mock_run_command: MagicMock, spec: PortUpdateSpec) -> None:
         mock_run_command.side_effect = run_fail_command_side_effect_factory(
-            get_destroy_rule_cmd(self.TEST_RULE),
+            get_destroy_rule_cmd(spec.tcp_rule),
             error=CommandError(1, "", reason=""),
             has_port_rule=True
         )
 
         with pytest.raises(IptablesError, match="Failed to close TCP port"):
-            update_iptables_tcp_port(self.TEST_PORT, open_port=False)
+            spec.update_iptables_tcp_port(open_port=False)
 
-    def test_save_iptables_command_error(self, mock_run_command: MagicMock) -> None:
+    def test_save_iptables_command_error(self, mock_run_command: MagicMock, spec: PortUpdateSpec) -> None:
         mock_run_command.side_effect = run_fail_command_side_effect_factory(
             get_save_iptables_cmd(),
             error=CommandError(1, "", reason="")
         )
 
         with pytest.raises(IptablesError, match="Failed to save iptables changes"):
-            update_iptables_tcp_port(self.TEST_PORT, open_port=True)
+            spec.update_iptables_tcp_port(open_port=True)
