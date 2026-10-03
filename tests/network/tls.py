@@ -41,7 +41,6 @@ def tls_contexts(tmp_path: Path) -> TlsContexts:
     valid for `127.0.0.1` only.
     """
 
-    pytest.importorskip("cryptography")
     from cryptography import x509
     from cryptography.hazmat.primitives import hashes, serialization
     from cryptography.hazmat.primitives.asymmetric import ec
