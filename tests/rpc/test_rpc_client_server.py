@@ -13,10 +13,13 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 import socket
+import ssl
 from unittest.mock import patch
 
 import pytest
 
+from tests.network.tls import over_plain_and_tls
+from tests.rpc.conftest import CLIENT_TIMEOUT, RpcClientFactory
 from xcp_storage.network.protocol import Protocol, ProtocolError
 from xcp_storage.network.protocol.xcp import XcpProtocol
 from xcp_storage.network.tcp_client import TcpClient, TcpClientError
@@ -25,17 +28,15 @@ from xcp_storage.rpc.server import RpcApiServer
 from xcp_storage.utils.json.rpc import JsonRpcRequestError
 
 from xcp_storage.typing import (
-    Final,
     List,
+    Optional,
     Sequence,
     Tuple,
 )
 
 # ==============================================================================
 
-class TestRpcClientServer:
-    CLIENT_TIMEOUT: Final = 1.0
-
+class TestRpcClient:
     def test_invalid_method(self, rpc_server: RpcApiServer) -> None:
         def non_rpc_function() -> None:
             pass
@@ -45,12 +46,28 @@ class TestRpcClientServer:
             rpc_client.call_api(non_rpc_function)
 
     def test_connect_with_unreachable_server(self) -> None:
-        rpc_client = RpcApiClient("10.255.255.1", 9999, client_timeout=self.CLIENT_TIMEOUT)
+        rpc_client = RpcApiClient("10.255.255.1", 9999, client_timeout=CLIENT_TIMEOUT)
         with pytest.raises(TcpClientError, match="Unable to connect to server."):
             rpc_client.connect()
 
-    def test_retry_call_on_socket_disconnect(self, rpc_server: RpcApiServer) -> None:
-        rpc_client = RpcApiClient(rpc_server.address, rpc_server.port, client_timeout=self.CLIENT_TIMEOUT)
+    @pytest.mark.parametrize("ssl_contexts", [True], indirect=True, ids=["tls"])
+    def test_connect_with_untrusted_certificate(self, rpc_server: RpcApiServer) -> None:
+        # The default context only trusts the system CAs: the server self-signed certificate must be rejected.
+        rpc_client = RpcApiClient(
+            rpc_server.address,
+            rpc_server.port,
+            ssl_context=ssl.create_default_context(),
+            client_timeout=CLIENT_TIMEOUT
+        )
+        with pytest.raises(TcpClientError, match="Unable to connect to server."):
+            rpc_client.connect()
+
+        assert not rpc_client.connected
+
+@over_plain_and_tls
+class TestRpcClientServer:
+    def test_retry_call_on_socket_disconnect(self, rpc_client_factory: RpcClientFactory) -> None:
+        rpc_client = rpc_client_factory()
 
         rpc_client.connect()
         assert rpc_client.connected
@@ -64,8 +81,8 @@ class TestRpcClientServer:
         assert response == message
         assert rpc_client.connected
 
-    def test_rpc_packet_last_sequences(self, rpc_server: RpcApiServer) -> None:
-        rpc_client = RpcApiClient(rpc_server.address, rpc_server.port, client_timeout=self.CLIENT_TIMEOUT)
+    def test_rpc_packet_last_sequences(self, rpc_client_factory: RpcClientFactory) -> None:
+        rpc_client = rpc_client_factory()
 
         protocol = rpc_client._protocol # noqa: SLF001
         send_packet = protocol.send_packet
@@ -108,8 +125,8 @@ class TestRpcClientServer:
         ]
         assert rpc_client._seq == 4 # noqa: SLF001
 
-    def test_corrupted_client_packet(self, rpc_server: RpcApiServer) -> None:
-        rpc_client = RpcApiClient(rpc_server.address, rpc_server.port, client_timeout=self.CLIENT_TIMEOUT)
+    def test_corrupted_client_packet(self, rpc_client_factory: RpcClientFactory) -> None:
+        rpc_client = rpc_client_factory()
 
         def side_effect_send(sock: socket.socket, _packet: Protocol.Packet) -> None:
             sock.sendall(b"BBBBBBBBBBBBB")
@@ -120,17 +137,21 @@ class TestRpcClientServer:
 
         assert not rpc_client.connected
 
-    def test_packet_unknown_seq_is_answered_with_zero(self, rpc_server: RpcApiServer) -> None:
+    def test_packet_unknown_seq_is_answered_with_zero(
+        self, rpc_server: RpcApiServer, client_ssl_context: Optional[ssl.SSLContext]
+    ) -> None:
         # An unexpected error (not a protocol one) leaves the sequence number of the request unknown.
-        tcp_client = TcpClient(rpc_server.address, rpc_server.port, client_timeout=self.CLIENT_TIMEOUT)
+        tcp_client = TcpClient(
+            rpc_server.address, rpc_server.port, client_timeout=CLIENT_TIMEOUT, ssl_context=client_ssl_context
+        )
         with patch.object(XcpProtocol, "receive_packet_async", side_effect=RuntimeError("boom")), tcp_client:
             assert tcp_client.socket
             packet = XcpProtocol().receive_packet(tcp_client.socket.sock, (Protocol.MessageType.RESPONSE, ))
 
         assert packet.seq == 0
 
-    def test_server_stops_during_call(self, rpc_server: RpcApiServer) -> None:
-        rpc_client = RpcApiClient(rpc_server.address, rpc_server.port, client_timeout=self.CLIENT_TIMEOUT)
+    def test_server_stops_during_call(self, rpc_server: RpcApiServer, rpc_client_factory: RpcClientFactory) -> None:
+        rpc_client = rpc_client_factory()
         rpc_client.connect()
         assert rpc_client.connected
 
