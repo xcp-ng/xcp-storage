@@ -57,7 +57,7 @@ disallow_untyped_defs = false
 
 [tool.pyrefly]
 python-version = "3.14"
-search-path = ["stubs"]
+search-path = [".", "stubs"]
 project-includes = [
     "src",
     "tests"
