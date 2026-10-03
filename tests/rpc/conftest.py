@@ -12,14 +12,26 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+import ssl
 import threading
-from typing import Generator
 
 import pytest
 
+from tests.network.tls import (  # noqa: F401
+    client_ssl_context,
+    ssl_contexts,
+    tls_contexts,
+    TlsContexts,
+)
+from xcp_storage.rpc.client import RpcApiClient
 from xcp_storage.rpc.server import RpcApiServer
 
-from xcp_storage.typing import Final
+from xcp_storage.typing import (
+    Callable,
+    Final,
+    Generator,
+    Optional,
+)
 
 # ==============================================================================
 
@@ -28,12 +40,13 @@ SERVER_SHUTDOWN_TIMEOUT: Final = 5.0
 
 SERVER_THREAD_SHUTDOWN_TIMEOUT: Final = 5.0
 
+CLIENT_TIMEOUT: Final = 1.0
+
 # ------------------------------------------------------------------------------
 
 @pytest.fixture
-def rpc_server() -> Generator[RpcApiServer, None, None]:
-    server = RpcApiServer("127.0.0.1", 0)
-
+def rpc_server(ssl_contexts: Optional[TlsContexts]) -> Generator[RpcApiServer, None, None]: # noqa: F811
+    server = RpcApiServer("127.0.0.1", 0, ssl_context=ssl_contexts.server if ssl_contexts else None)
     server_thread = threading.Thread(target=server.run, daemon=True)
     server_thread.start()
     try:
@@ -43,3 +56,19 @@ def rpc_server() -> Generator[RpcApiServer, None, None]:
         server.stop(timeout=SERVER_SHUTDOWN_TIMEOUT)
         server_thread.join(timeout=SERVER_THREAD_SHUTDOWN_TIMEOUT)
         assert not server_thread.is_alive(), "Server thread still alive."
+
+RpcClientFactory = Callable[..., RpcApiClient]
+
+@pytest.fixture
+def rpc_client_factory(
+    rpc_server: RpcApiServer,
+    client_ssl_context: Optional[ssl.SSLContext] # noqa: F811
+) -> RpcClientFactory:
+    def factory(*, client_timeout: float = CLIENT_TIMEOUT) -> RpcApiClient:
+        return RpcApiClient(
+            rpc_server.address,
+            rpc_server.port,
+            ssl_context=client_ssl_context,
+            client_timeout=client_timeout
+        )
+    return factory
