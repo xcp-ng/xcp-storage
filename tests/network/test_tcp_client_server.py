@@ -22,7 +22,7 @@ import time
 import pytest
 
 from tests.network import find_free_tcp_port
-from tests.network.conftest import over_plain_and_tls, TlsContexts
+from tests.network.tls import over_plain_and_tls, TlsContexts
 from xcp_storage.network.socket import (
     get_socket_port,
     SocketDisconnectedError,
