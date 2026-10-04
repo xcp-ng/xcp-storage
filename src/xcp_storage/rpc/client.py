@@ -74,6 +74,12 @@ class RpcApiClient(JsonRpcClient):
         *args: P.args,
         **kwargs: P.kwargs
     ) -> JsonValueT:
+        """
+        Call the RPC API `method`. The call is retried if the connection is lost, unless the method is
+        declared with `idempotent=False` (see `JsonRpcDispatcher.method`).
+        See `JsonRpcClient.call_with_timeout` for more details.
+        """
+
         return self.call_api_with_timeout(self._client_timeout, method, *args, **kwargs)
 
     def call_api_with_timeout(
@@ -87,6 +93,7 @@ class RpcApiClient(JsonRpcClient):
             method_name = cast(Any, method)._rpc_name # noqa: SLF001
         except AttributeError:
             raise JsonRpcRequestError("Method is not marked as RPC.") from None
+        idempotent = getattr(method, "_rpc_idempotent", True)
 
         if args and kwargs:
             raise JsonRpcRequestError("Positional and named arguments cannot be mixed.")
@@ -99,4 +106,4 @@ class RpcApiClient(JsonRpcClient):
         else:
             params = None
 
-        return cast(JsonValueT, self.call_with_timeout(timeout, method_name, params))
+        return cast(JsonValueT, self.call_with_timeout(timeout, method_name, params, retry_on_disconnect=idempotent))

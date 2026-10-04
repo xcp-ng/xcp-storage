@@ -30,6 +30,7 @@ from xcp_storage.typing import (
     Final,
     List,
     Optional,
+    overload,
     override,
     ParamSpec,
     TypeVar,
@@ -516,14 +517,42 @@ class JsonRpcDispatcher:
 
         return JsonRpcCallResult(result=result)
 
+    @overload
     def method(self, func: Callable[P, T]) -> Callable[P, T]:
-        name = func.__name__
-        if self._use_module_name:
-            name = PurePath(inspect.getfile(func)).stem + "." + name
-        self._name_to_method[name] = func
+        ...
 
-        cast(Any, func)._rpc_name = name # noqa: SLF001
-        return func
+    @overload
+    def method(self, *, idempotent: bool = True) -> Callable[[Callable[P, T]], Callable[P, T]]:
+        ...
+
+    def method(
+        self,
+        func: Optional[Callable[P, T]] = None,
+        *,
+        idempotent: bool = True
+    ) -> Union[Callable[P, T], Callable[[Callable[P, T]], Callable[P, T]]]:
+        """
+        Register a function as RPC method.
+
+        `idempotent=False` declares a method that must not be executed twice: a client calling it
+        through the API never sends the request again after a lost connection
+        (see `JsonRpcClient.call_with_timeout`).
+        """
+
+        def register(target: Callable[P, T]) -> Callable[P, T]:
+            name = target.__name__
+            if self._use_module_name:
+                name = PurePath(inspect.getfile(target)).stem + "." + name
+            self._name_to_method[name] = target
+
+            target_info = cast(Any, target)
+            target_info._rpc_name = name # noqa: SLF001
+            target_info._rpc_idempotent = idempotent # noqa: SLF001
+            return target
+
+        if func is None:
+            return register
+        return register(func)
 
 # ------------------------------------------------------------------------------
 # Request processor.
