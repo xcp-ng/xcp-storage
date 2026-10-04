@@ -117,16 +117,44 @@ class JsonRpcClient:
     def call(
         self,
         method: str,
-        params: Union[JsonList, JsonDict, None] = None
+        params: Union[JsonList, JsonDict, None] = None,
+        *,
+        retry_on_disconnect: bool = True
     ) -> JsonValue:
-        return self.call_with_timeout(self._client_timeout, method, params)
+        """
+        Call `method` with the client timeout. See `call_with_timeout` for the retry semantics.
+        """
+
+        return self.call_with_timeout(self._client_timeout, method, params, retry_on_disconnect=retry_on_disconnect)
 
     def call_with_timeout(
         self,
         timeout: float,
         method: str,
-        params: Union[JsonList, JsonDict, None] = None
+        params: Union[JsonList, JsonDict, None] = None,
+        *,
+        retry_on_disconnect: bool = True
     ) -> JsonValue:
+        """
+        Call `method` and return its result.
+
+        If the connection is lost (`SocketDisconnectedError`), the client reconnects and sends the
+        same request again, until `timeout` is elapsed. The delivery is therefore "at least once":
+        the failure can occur while waiting for the response, after the server has already executed
+        the request. RPC methods exposed through this client MUST be idempotent, or tolerate being
+        executed twice.
+
+        For the rare methods that must not be executed twice, use `retry_on_disconnect=False` (the
+        API client does it for methods declared with `idempotent=False`): the request is sent at most
+        once and `SocketDisconnectedError` is raised on a lost connection.
+        It is then up to the caller to determine if the method has been executed. Note that the
+        client still waits up to `timeout` for the initial connection to the server: nothing has
+        been sent at this point.
+
+        Other errors are not retried: a timeout (`SocketTimeoutError`) or an error response from
+        the server is raised as is.
+        """
+
         remaining_time = timeout
         start_time = time.monotonic()
 
@@ -134,6 +162,8 @@ class JsonRpcClient:
             try:
                 return self._call(remaining_time, method, params)
             except SocketDisconnectedError: # noqa: PERF203
+                if not retry_on_disconnect:
+                    raise
                 remaining_time = timeout - (time.monotonic() - start_time)
                 if remaining_time <= 0:
                     raise
