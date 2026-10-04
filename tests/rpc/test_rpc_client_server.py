@@ -22,9 +22,11 @@ from tests.network.tls import over_plain_and_tls
 from tests.rpc.conftest import CLIENT_TIMEOUT, RpcClientFactory
 from xcp_storage.network.protocol import Protocol, ProtocolError
 from xcp_storage.network.protocol.xcp import XcpProtocol
+from xcp_storage.network.socket import SocketDisconnectedError
 from xcp_storage.network.tcp_client import TcpClientError
 from xcp_storage.rpc.client import RpcApiClient
 from xcp_storage.rpc.server import RpcApiServer
+from xcp_storage.utils.json import JsonDict
 from xcp_storage.utils.json.rpc import JsonRpcRequestError
 
 from xcp_storage.typing import (
@@ -65,7 +67,10 @@ class TestRpcClient:
 
 @over_plain_and_tls
 class TestRpcClientServer:
-    def test_retry_call_on_socket_disconnect(self, rpc_client_factory: RpcClientFactory) -> None:
+    @pytest.mark.parametrize("retry_on_disconnect", [True, False])
+    def test_retry_call_on_socket_disconnect(
+        self, rpc_client_factory: RpcClientFactory, *, retry_on_disconnect: bool
+    ) -> None:
         rpc_client = rpc_client_factory()
 
         rpc_client.connect()
@@ -76,8 +81,18 @@ class TestRpcClientServer:
         tpc_socket.close()
 
         message = "Bonjour !"
-        response = rpc_client.call("echo.echo", params={"message": message})
-        assert response == message
+        params: JsonDict = {"message": message}
+        with patch.object(rpc_client, "_call", wraps=rpc_client._call) as call_spy: # noqa: SLF001
+            if retry_on_disconnect:
+                assert rpc_client.call("echo.echo", params=params) == message
+            else:
+                with pytest.raises(SocketDisconnectedError):
+                    rpc_client.call("echo.echo", params=params, retry_on_disconnect=False)
+
+        assert call_spy.call_count == (2 if retry_on_disconnect else 1)
+        assert rpc_client.connected == retry_on_disconnect
+
+        assert rpc_client.call("echo.echo", params=params) == message
         assert rpc_client.connected
 
     def test_rpc_packet_last_sequences(self, rpc_client_factory: RpcClientFactory) -> None:
