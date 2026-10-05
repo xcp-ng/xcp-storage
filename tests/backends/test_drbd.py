@@ -29,6 +29,7 @@ from xcp_storage.backends.drbd import (
 from xcp_storage.typing import (
     Any,
     Dict,
+    Final,
     List,
 )
 
@@ -273,3 +274,63 @@ class TestDemoteDrbd:
         with caplog.at_level("INFO"):
             assert not Drbd.demote("res-test")
         assert f"Failed to demote DRBD resource `res-test`: `{stderr}`." in caplog.text
+
+# ------------------------------------------------------------------------------
+
+# Resource names and volume numbers can come from an RPC call or external stack: types are not checked at runtime.
+# So we test different situations.
+@patch.object(Path, "read_text")
+@patch("xcp_storage.backends.drbd.run_command")
+class TestInvalidDrbdArguments:
+    INVALID_RESOURCE_NAMES: Final = (
+        "", ".", "..", "../x", "x/../y", "a/b", "/abs", "a b", "a\n", "a\x00b", "\u00e9", "-x", "--param", ".ext"
+    )
+    NOT_RESOURCE_NAMES: Final = (None, 1, b"res")
+
+    INVALID_VOLUME_NUMBERS: Final = (-1, -42)
+    NOT_VOLUME_NUMBERS: Final = ("0", "0/../../x", 1.5, True, False, None)
+
+    @pytest.mark.parametrize("resource_name, message", [
+        *((name, "Invalid DRBD resource name") for name in INVALID_RESOURCE_NAMES),
+        *((name, "Not a DRBD resource name") for name in NOT_RESOURCE_NAMES)
+    ])
+    def test_invalid_resource_name(
+        self,
+        mock_run_command: MagicMock,
+        mock_read_text: MagicMock,
+        resource_name: Any, # noqa: ANN401
+        message: str
+    ) -> None:
+        for call in (
+            lambda: Drbd.build_path(resource_name, 0),
+            lambda: Drbd.get_connection_address(resource_name, "sr123-s1"),
+            lambda: Drbd.get_primary_address(resource_name),
+            lambda: Drbd.get_local_openers(resource_name, 0),
+            lambda: Drbd.demote(resource_name)
+        ):
+            with pytest.raises(ValueError, match=message):
+                call()
+
+        mock_run_command.assert_not_called()
+        mock_read_text.assert_not_called()
+
+    @pytest.mark.parametrize("volume_number, message", [
+        *((number, "Invalid DRBD volume number") for number in INVALID_VOLUME_NUMBERS),
+        *((number, "Not a DRBD volume number") for number in NOT_VOLUME_NUMBERS)
+    ])
+    def test_invalid_volume_number(
+        self,
+        mock_run_command: MagicMock,
+        mock_read_text: MagicMock,
+        volume_number: Any, # noqa: ANN401
+        message: str
+    ) -> None:
+        for call in (
+            lambda: Drbd.build_path("res-test", volume_number),
+            lambda: Drbd.get_local_openers("res-test", volume_number)
+        ):
+            with pytest.raises(ValueError, match=message):
+                call()
+
+        mock_run_command.assert_not_called()
+        mock_read_text.assert_not_called()
