@@ -376,8 +376,14 @@ class TestTcpClientServer:
         tcp_client = tcp_client_factory()
         tcp_client.connect()
 
+        # Wait for the server to close its side. Otherwise all the sends below could complete
+        # before the server has handled the connection, and nothing would fail.
+        assert tcp_client.socket
+        assert tcp_client.socket.wait_readable(timeout=2.0)
+
+        deadline = time.monotonic() + 1.0
         with pytest.raises(SocketDisconnectedError, match="Unable to send data."):
-            for _ in range(100):
+            while time.monotonic() < deadline:
                 tcp_client.send(b"Moshimoshi?")
 
         with pytest.raises(TcpClientError, match="Cannot send. Not connected."):
