@@ -53,6 +53,23 @@ _REGEX_DRBD_RESOURCE_NAME: Final = re.compile(r"\w[\w.-]*", re.ASCII)
 
 # ------------------------------------------------------------------------------
 
+# Because this module can be used by external layers and RPC, we must have checkers
+# to prevent code injection.
+
+def _check_drbd_resource_name(resource_name: str) -> None:
+    if not isinstance(resource_name, str):
+        raise ValueError(f"Not a DRBD resource name: `{resource_name}`.")
+    if not _REGEX_DRBD_RESOURCE_NAME.fullmatch(resource_name):
+        raise ValueError(f"Invalid DRBD resource name: `{resource_name}`.")
+
+def _check_drbd_volume_number(volume_number: int) -> None:
+    if not isinstance(volume_number, int) or isinstance(volume_number, bool):
+        raise ValueError(f"Not a DRBD volume number: `{volume_number}`.")
+    if volume_number < 0:
+        raise ValueError(f"Invalid DRBD volume number: `{volume_number}`.")
+
+# ------------------------------------------------------------------------------
+
 @contextlib.contextmanager
 def _handle_drbd_json_error() -> Iterator[None]:
     """
@@ -110,6 +127,8 @@ class DrbdOpener:
 class Drbd:
     @staticmethod
     def build_path(resource_name: str, volume_number: int) -> str:
+        _check_drbd_resource_name(resource_name)
+        _check_drbd_volume_number(volume_number)
         return f"{DRBD_BY_RES_PATH}{resource_name}/{volume_number}"
 
     @staticmethod
@@ -135,6 +154,7 @@ class Drbd:
 
     @staticmethod
     def get_connection_address(resource_name: str, node_name: str) -> str:
+        _check_drbd_resource_name(resource_name)
         status = _get_drbd_status(resource_name)
         if not status:
             return ""
@@ -147,6 +167,7 @@ class Drbd:
 
     @staticmethod
     def get_primary_address(resource_name: str) -> str:
+        _check_drbd_resource_name(resource_name)
         status = _get_drbd_status(resource_name)
         if not status:
             return ""
@@ -163,7 +184,8 @@ class Drbd:
 
     @staticmethod
     def get_local_openers(resource_name: str, volume_number: int) -> List[DrbdOpener]:
-        assert resource_name, "Cannot get DRBD openers without resource name."
+        _check_drbd_resource_name(resource_name)
+        _check_drbd_volume_number(volume_number)
 
         path = Path(f"/sys/kernel/debug/drbd/resources/{resource_name}/volumes/{volume_number}/openers")
         try:
@@ -199,6 +221,7 @@ class Drbd:
 
     @staticmethod
     def demote(resource_name: str) -> bool:
+        _check_drbd_resource_name(resource_name)
         error_message = ""
         try:
             _stdout, stderr, ret_code = run_command([_EXEC_PATH_DRBDSETUP, "secondary", resource_name], simple=False)
