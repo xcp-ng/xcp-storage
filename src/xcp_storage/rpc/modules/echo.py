@@ -12,10 +12,17 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-from tests.network.tls import (  # noqa: F401
-    client_ssl_context,
-    ssl_contexts,
-    tls_contexts,
-)
+import time
+
+from xcp_storage.rpc.dispatcher import ApiDispatcher
 
 # ==============================================================================
+
+@ApiDispatcher.method
+def echo(message: str) -> str:
+    return message
+
+@ApiDispatcher.method
+def defer_echo(message: str, delay: float) -> str:
+    time.sleep(delay)
+    return message

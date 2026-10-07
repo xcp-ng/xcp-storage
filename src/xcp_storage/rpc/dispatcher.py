@@ -12,10 +12,8 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-from tests.network.tls import (  # noqa: F401
-    client_ssl_context,
-    ssl_contexts,
-    tls_contexts,
-)
+from xcp_storage.utils.json.rpc import JsonRpcDispatcher
 
 # ==============================================================================
+
+ApiDispatcher = JsonRpcDispatcher(use_module_name=True)

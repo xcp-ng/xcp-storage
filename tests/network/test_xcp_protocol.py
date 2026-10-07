@@ -12,10 +12,26 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-from tests.network.tls import (  # noqa: F401
-    client_ssl_context,
-    ssl_contexts,
-    tls_contexts,
-)
+import pytest
+
+from xcp_storage.network.protocol.xcp import XcpProtocol
 
 # ==============================================================================
+
+class TestXcpProtocolSeq:
+    @pytest.mark.parametrize(("seq", "expected_next_seq"), [
+        (0, 1),
+        (1, 2),
+        (XcpProtocol.MAX_SEQ - 1, XcpProtocol.MAX_SEQ),
+        (XcpProtocol.MAX_SEQ, 1)
+    ])
+    def test_next(self, seq: int, expected_next_seq: int) -> None:
+        assert XcpProtocol().get_next_packet_seq(seq) == expected_next_seq
+
+    def test_bounds(self) -> None:
+        protocol = XcpProtocol()
+
+        seq = 0
+        for _ in range(2 * XcpProtocol.MAX_SEQ):
+            seq = protocol.get_next_packet_seq(seq)
+            assert 1 <= seq <= XcpProtocol.MAX_SEQ
