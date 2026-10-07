@@ -1,0 +1,13 @@
+rules:
+  - id: python-forbid-direct-typing-import
+    languages: [python]
+    severity: WARNING
+    message: "Import from `xcp_storage.typing`, not from `typing` or `typing_extensions`."
+    paths:
+      exclude:
+        - src/xcp_storage/typing/
+    pattern-either:
+      - pattern: from typing import $X
+      - pattern: from typing_extensions import $X
+      - pattern: import typing
+      - pattern: import typing_extensions
