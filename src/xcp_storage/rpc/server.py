@@ -15,7 +15,7 @@
 import ssl
 
 # Import API mods to ensure ApiDispatcher is exported with all public methods.
-import xcp_storage.rpc.api  # noqa: F401
+import xcp_storage.rpc.api  # noqa: F401, ICN001
 from xcp_storage.rpc.dispatcher import ApiDispatcher
 from xcp_storage.utils.json.rpc.server import JsonRpcServer
 
