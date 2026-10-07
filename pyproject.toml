@@ -191,6 +191,43 @@ section-order = [
     "typing"
 ]
 
+[tool.ruff.lint.flake8-import-conventions]
+# Modules that are always imported with `import X`, never with `from X import ...`.
+banned-from = [
+    "asyncio",
+    "contextlib",
+    "datetime",
+    "errno",
+    "fcntl",
+    "inspect",
+    "ipaddress",
+    "json",
+    "logging",
+    "logging.handlers",
+    "multiprocessing",
+    "multiprocessing.synchronize",
+    "os",
+    "pytest",
+    "re",
+    "select",
+    "signal",
+    "socket",
+    "ssl",
+    "struct",
+    "subprocess",
+    "sys",
+    "threading",
+    "time",
+    "uuid"
+]
+
+[tool.ruff.lint.flake8-import-conventions.extend-aliases]
+# Modules that are always imported with `import X as Y`.
+"xcp_storage.log" = "log"
+"xcp_storage.rpc.api" = "api"
+"xcp_storage.rpc.modules.drbd" = "drbd"
+"xcp_storage.rpc.modules.echo" = "echo"
+
 [tool.ruff.lint.flake8-tidy-imports]
 ban-relative-imports = "all"
 
