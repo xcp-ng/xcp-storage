@@ -12,7 +12,10 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-from xcp_storage.typing import Final
+from functools import lru_cache
+from pathlib import Path
+
+from xcp_storage.typing import Final, Mapping, Tuple
 
 # ==============================================================================
 # Attributes that depend on the execution environment.
@@ -21,3 +24,35 @@ from xcp_storage.typing import Final
 # ==============================================================================
 
 DEFAULT_FIREWALL_INPUT_CHAIN: Final = "xapi-INPUT"
+
+# ------------------------------------------------------------------------------
+
+_OS_RELEASE_PATH: Final = "/etc/os-release"
+
+@lru_cache(maxsize=None)
+def get_os_ids() -> Tuple[str, ...]:
+    """
+    Get the IDs of the current distribution, most specific first: `ID` followed
+    by the values of `ID_LIKE` (e.g. `("ubuntu", "debian")`). The result is
+    cached. An empty tuple is returned if `/etc/os-release` can't be read.
+    """
+
+    try:
+        lines = Path(_OS_RELEASE_PATH).read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return ()
+
+    values = {}
+    for line in lines:
+        key, _separator, value = line.partition("=")
+        values[key.strip()] = value.strip().strip("\"'")
+
+    return tuple(values.get("ID", "").split() + values.get("ID_LIKE", "").split())
+
+def get_exec_path(default: str, by_os_id: Mapping[str, str]) -> str:
+    """
+    Get the path of an executable: the one registered for the first matching OS
+    ID, otherwise `default`.
+    """
+
+    return next((by_os_id[os_id] for os_id in get_os_ids() if os_id in by_os_id), default)
