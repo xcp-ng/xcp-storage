@@ -1,0 +1,19 @@
+rules:
+  - id: python-forbid-import-of-from-only-modules
+    languages: [python]
+    severity: WARNING
+    message: "This module is always imported with `from X import ...`, not with `import X`."
+    pattern-regex: |-
+      (?x)
+      ^[ \t]*import[ \t]+(
+          abc
+        | cryptography(\.\w+)*
+        | dataclasses
+        | enum
+        | functools
+        | pathlib
+        | types
+        | tests(\.\w+)+
+        | unittest\.mock
+        | xcp_storage\.(?!log\b)(?!rpc\.(api|modules)\b)\w+(\.\w+)*
+      )\b
