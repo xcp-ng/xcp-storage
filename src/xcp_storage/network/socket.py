@@ -299,8 +299,30 @@ def socket_receive(sock: socket.socket, buffer: bytearray, size: Optional[int] =
 
 # ------------------------------------------------------------------------------
 
+def socket_wait_readable(sock: socket.socket, *, timeout: Optional[float] = None) -> bool:
+    if sock.fileno() < 0:
+        raise SocketDisconnectedError("Unable to wait for data. Socket is closed.")
+
+    # An SSL socket may already hold decrypted data that `select` cannot see.
+    if isinstance(sock, ssl.SSLSocket) and sock.pending():
+        return True
+
+    try:
+        readable, _, _ = select.select([sock], [], [], timeout)
+    except OSError as e:
+        raise SocketDisconnectedError("Unable to wait for data.") from e
+    return bool(readable)
+
+# ------------------------------------------------------------------------------
+
 def get_socket_family_str(sock: socket.socket) -> str:
     return _FAMILY_TO_STR.get(sock.family, "Unknown")
+
+def get_socket_port(sock: socket.socket) -> Optional[int]:
+    try:
+        return sock.getsockname()[1]
+    except OSError:
+        return None
 
 # ------------------------------------------------------------------------------
 
@@ -334,6 +356,9 @@ class Socket(contextlib.AbstractContextManager):
     def receive(self, buffer: bytearray, size: Optional[int] = None) -> None:
         socket_receive(self.sock, buffer, size)
 
+    def wait_readable(self, *, timeout: Optional[float] = None) -> bool:
+        return socket_wait_readable(self.sock, timeout=timeout)
+
     def close(self) -> None:
         if self.keep_open:
             return
@@ -345,6 +370,10 @@ class Socket(contextlib.AbstractContextManager):
     @property
     def family_str(self) -> str:
         return get_socket_family_str(self.sock)
+
+    @property
+    def port(self) -> Optional[int]:
+        return get_socket_port(self.sock)
 
     @property
     def timeout(self) -> Optional[float]:

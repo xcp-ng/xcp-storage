@@ -15,6 +15,7 @@
 import errno
 import ipaddress
 import socket
+import ssl
 from unittest.mock import (
     call,
     MagicMock,
@@ -30,15 +31,21 @@ from xcp_storage.network.socket import (
     format_address,
     get_ip_address,
     get_socket_family_str,
+    get_socket_port,
     Socket,
     socket_receive,
     socket_send,
+    socket_wait_readable,
     SocketDisconnectedError,
     SocketError,
     SocketTimeoutError,
 )
 
-from xcp_storage.typing import Final, Optional
+from xcp_storage.typing import (
+    Final,
+    Iterator,
+    Optional,
+)
 
 # ==============================================================================
 
@@ -204,9 +211,34 @@ class TestSocketCreate:
 
 # ------------------------------------------------------------------------------
 
+class TestSocketPort:
+    def test_get_socket_port(self) -> None:
+        with socket.socket() as sock:
+            sock.bind(("127.0.0.1", 0))
+            port = get_socket_port(sock)
+            assert port is not None and port > 0
+
+    def test_get_socket_port_closed_socket(self) -> None:
+        with socket.socket() as sock:
+            sock.close()
+            assert get_socket_port(sock) is None
+
+# ------------------------------------------------------------------------------
+
 @pytest.fixture
 def mock_sock() -> MagicMock:
-    return MagicMock(spec=socket.socket)
+    sock = MagicMock(spec=socket.socket)
+    sock.fileno.return_value = 3 # An open socket.
+    return sock
+
+@pytest.fixture
+def mock_ssl_sock() -> MagicMock:
+    sock = MagicMock(spec=ssl.SSLSocket)
+    sock.fileno.return_value = 4
+    sock.pending.return_value = 0
+    return sock
+
+# ------------------------------------------------------------------------------
 
 class TestSocketTransfer:
     MESSAGE: Final = b"hello world"
@@ -321,6 +353,46 @@ class TestSocketTransfer:
 
         with pytest.raises(SocketDisconnectedError, match="Unable to receive data."):
             socket_receive(mock_sock, buffer)
+
+# ------------------------------------------------------------------------------
+
+class TestSocketWaitReadable:
+    @pytest.fixture
+    def mock_select(self) -> Iterator[MagicMock]:
+        # Nothing is readable by default.
+        with patch("select.select", return_value=([], [], [])) as mock_select:
+            yield mock_select
+
+    def test_wait_readable(self, mock_select: MagicMock, mock_sock: MagicMock) -> None:
+        timeout = 0.5
+        assert not socket_wait_readable(mock_sock, timeout=timeout)
+        mock_select.assert_called_once_with([mock_sock], [], [], timeout)
+
+        mock_select.reset_mock(return_value=True)
+        mock_select.return_value = ([mock_sock], [], [])
+        assert socket_wait_readable(mock_sock)
+        mock_select.assert_called_once_with([mock_sock], [], [], None)
+
+    def test_wait_readable_on_closed_socket(self, mock_select: MagicMock, mock_sock: MagicMock) -> None:
+        mock_sock.fileno.return_value = -1
+        with pytest.raises(SocketDisconnectedError, match="Unable to wait for data. Socket is closed."):
+            socket_wait_readable(mock_sock)
+        mock_select.assert_not_called()
+
+    def test_wait_select_exception(self, mock_select: MagicMock, mock_sock: MagicMock) -> None:
+        mock_select.side_effect = OSError(errno.EBADF)
+        with pytest.raises(SocketDisconnectedError, match="Unable to wait for data."):
+            socket_wait_readable(mock_sock)
+
+    def test_wait_readable_with_pending_ssl_data(self, mock_select: MagicMock, mock_ssl_sock: MagicMock) -> None:
+        mock_ssl_sock.pending.return_value = 1
+        assert socket_wait_readable(mock_ssl_sock)
+        mock_select.assert_not_called()
+
+    def test_wait_readable_without_pending_ssl_data(self, mock_select: MagicMock, mock_ssl_sock: MagicMock) -> None:
+        mock_select.return_value = ([mock_ssl_sock], [], [])
+        assert socket_wait_readable(mock_ssl_sock)
+        mock_select.assert_called_once_with([mock_ssl_sock], [], [], None)
 
 # ------------------------------------------------------------------------------
 
