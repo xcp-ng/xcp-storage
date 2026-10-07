@@ -13,6 +13,7 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 from xcp_storage.backends.linstor.satellite import LINSTOR_SATELLITE_PORT_PLAIN, LINSTOR_SATELLITE_PORT_SSL
+from xcp_storage.config.platform import get_exec_path
 from xcp_storage.utils.process import run_command
 from xcp_storage.utils.service import (
     is_service_active,
@@ -30,7 +31,7 @@ LINSTOR_CONTROLLER_PORT_SSL: Final = 3371
 
 # ------------------------------------------------------------------------------
 
-_EXEC_PATH_SS: Final = "/usr/sbin/ss"
+_EXEC_PATH_SS: Final = get_exec_path("/usr/sbin/ss", {"debian": "/usr/bin/ss"})
 
 _SERVICE_LINSTOR_CONTROLLER: Final = "linstor-controller"
 
