@@ -1,0 +1,4 @@
+# Allowed commit scopes, one per line (blank lines and lines starting with `#` are ignored).
+# Used by `.github/scripts/check-commit-messages`.
+core
+tests/core
