@@ -1,0 +1,64 @@
+rules:
+  - id: python-enforce-file-variable-suffix
+    languages: [python]
+    severity: WARNING
+    message: "File variable `$VAR` must be named `file` or end with `_file`."
+    patterns:
+      - pattern-either:
+          - patterns:
+              - pattern-either:
+                  - pattern: |
+                      with $EXPR as $VAR:
+                          ...
+                  - pattern: "$VAR = $EXPR"
+                  - pattern: "self.$VAR = $EXPR"
+              - metavariable-pattern:
+                  metavariable: $EXPR
+                  patterns:
+                    - pattern-either:
+                        - pattern: open(...)
+                        - pattern: io.open(...)
+                        - pattern: os.fdopen(...)
+                        - pattern: Path(...).open(...)
+                        - pattern: tempfile.NamedTemporaryFile(...)
+                        - pattern: tempfile.TemporaryFile(...)
+                        - pattern: tempfile.SpooledTemporaryFile(...)
+                        - pattern: $SOCKET.makefile(...)
+                        - patterns:
+                            - pattern: $PATH.open(...)
+                            - metavariable-regex:
+                                metavariable: $PATH
+                                regex: '^(.*[._])?path$'
+          - patterns:
+              - pattern-either:
+                  - pattern: "$VAR: $TYPE"
+                  - pattern: "$VAR: $TYPE = ..."
+                  - pattern: "self.$VAR: $TYPE = ..."
+                  - pattern: |
+                      def $FUNCTION(..., $VAR: $TYPE, ...):
+                          ...
+              - metavariable-regex:
+                  metavariable: $TYPE
+                  regex: |-
+                    (?x)
+                    (?(DEFINE)
+                        (?<FILE_CLASS>
+                            TextIOWrapper | TextIO | BinaryIO | IO
+                          | BufferedReader | BufferedWriter | BufferedRandom | FileIO
+                        )
+                        (?<FILE_TYPE>
+                            (?:\w+\.)*
+                            (?&FILE_CLASS)
+                            (?:\[[^\]]*\])?
+                        )
+                    )
+                    ^(?:
+                        (?&FILE_TYPE)
+                      | Optional\[\s*(?&FILE_TYPE)\s*\]
+                      | (?&FILE_TYPE)\s*\|\s*None
+                      | None\s*\|\s*(?&FILE_TYPE)
+                    )$
+      - focus-metavariable: $VAR
+      - metavariable-regex:
+          metavariable: $VAR
+          regex: '^(?!(?:(?:.*_)?file)$)[^.]+$'
