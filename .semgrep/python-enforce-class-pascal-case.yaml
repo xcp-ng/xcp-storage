@@ -1,0 +1,14 @@
+rules:
+  - id: python-enforce-class-pascal-case
+    languages: [python]
+    severity: WARNING
+    message: "Class `$CLASS` must respect PascalCase style."
+
+    patterns:
+      - pattern: |
+          class $CLASS(...):
+            ...
+
+      - metavariable-regex:
+          metavariable: $CLASS
+          regex: '^(?!_?([A-Z][a-z0-9]+)+$)'
