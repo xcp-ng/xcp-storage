@@ -1,0 +1,39 @@
+rules:
+  - id: python-enforce-file-variable-suffix
+    languages: [python]
+    severity: WARNING
+    message: "File object `$FILE` must be named `file` or end with `_file`."
+    patterns:
+      - pattern-either:
+          - pattern: |
+              with open(...) as $FILE:
+                  ...
+          - pattern: |
+              with ..., open(...) as $FILE, ...:
+                  ...
+          - pattern: |
+              with Path(...).open(...) as $FILE:
+                  ...
+          - pattern: |
+              with ..., Path(...).open(...) as $FILE, ...:
+                  ...
+          - pattern: $FILE = open(...)
+          - pattern: $FILE = Path(...).open(...)
+          - patterns:
+              - pattern-either:
+                  - pattern: |
+                      with $PATH.open(...) as $FILE:
+                          ...
+                  - pattern: |
+                      with ..., $PATH.open(...) as $FILE, ...:
+                          ...
+                  - pattern: $FILE = $PATH.open(...)
+              - metavariable-regex:
+                  metavariable: $PATH
+                  regex: '^(.*[._])?path$'
+
+      - focus-metavariable: $FILE
+
+      - metavariable-regex:
+          metavariable: $FILE
+          regex: '^(?!(file|\w+_file)$)'
