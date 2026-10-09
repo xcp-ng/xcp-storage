@@ -1,0 +1,47 @@
+#!/usr/bin/env bash
+#
+# Copyright (C) 2026  Vates SAS
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
+# ==============================================================================
+# Amend the title of `HEAD` so that it ends with the given pull request ID suffix, and only with it.
+# The title is left untouched if it already ends like that.
+#
+# Usage: amend-commit-pr-id <pr-id-suffix>
+#
+# Run by `git rebase --exec` from `add-commit-pr-id`, once for each commit it replays. It does
+# none of the checks of `add-commit-pr-id`: do not use it directly.
+# ==============================================================================
+
+set -euo pipefail
+
+source "$(dirname "$0")/lib/pr-id.sh"
+
+# ==============================================================================
+
+if [ "$#" -ne 1 ]; then
+    echo "Usage: $0 <pr-id-suffix>" >&2
+    exit 2
+fi
+
+readonly PR_ID_SUFFIX=$1
+
+# ------------------------------------------------------------------------------
+
+subject=$(git log -1 --format=%s)
+new_subject=$(with_pr_id "$subject" "$PR_ID_SUFFIX")
+if [ "$new_subject" != "$subject" ]; then
+    # Only the first line of the message (the title) changes, the body is kept as is.
+    { echo "$new_subject"; git log -1 --format=%B | tail -n +2; } | git commit --amend --allow-empty --no-verify -q -F -
+fi

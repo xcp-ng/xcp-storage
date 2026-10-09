@@ -1,8 +1,27 @@
 #!/usr/bin/env bash
 #
+# Copyright (C) 2026  Vates SAS
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
+# ==============================================================================
 # Check the commit message conventions of a pull request.
 #
-# Usage: check-commit-messages.sh <base-sha> <head-sha> <pr-number>
+# Usage: check-commit-messages <base-sha> <head-sha> <pr-number>
+#
+# - `<base-sha>`: base of the range to check.
+# - `<head-sha>`: head of the range to check.
+# - `<pr-number>`: number of the pull request.
 #
 # Rules:
 # - Format: `<type>(<scope>): <subject>`, with type in `feat`, `fix`, `docs` or `chore`.
@@ -15,14 +34,22 @@
 # - A commit that only touches files in `tests/` must have a scope starting with `tests/`
 #   (even for `chore`), and a scope starting with `tests/` is only allowed for such commits.
 # - A `chore` commit touching files in `src/` or `tests/` only triggers a warning (never a failure).
+# - A subject ends with at most one pull request ID.
 # - If the pull request has several commits, each one should end with ` (#<pr-number>)`.
 #   With a single commit nothing is checked: the ID is added when the pull request is merged.
+# ==============================================================================
 
 set -euo pipefail
 
-readonly SCOPES_FILE_PATH="$(dirname "$0")/../commit-scopes.txt"
+SCRIPT_DIR=$(dirname "$(readlink -f "$0")")
+readonly SCRIPT_DIR
+
+readonly SCOPES_FILE_PATH="${SCRIPT_DIR}/../commit-scopes.txt"
 
 readonly MAX_SUBJECT_LENGTH=70
+
+source "${SCRIPT_DIR}/lib/git.sh"
+source "${SCRIPT_DIR}/lib/pr-id.sh"
 
 # ==============================================================================
 
@@ -31,9 +58,25 @@ if [ "$#" -ne 3 ]; then
     exit 2
 fi
 
-readonly BASE_SHA=$1
-readonly HEAD_SHA=$2
+BASE_SHA=$(resolve_commit "$1")
+readonly BASE_SHA
+
+HEAD_SHA=$(resolve_commit "$2")
+readonly HEAD_SHA
+
 readonly PR_NUMBER=$3
+
+if ! is_pr_number "$PR_NUMBER"; then
+    echo "Invalid pull request number: \`${PR_NUMBER}\`." >&2
+    exit 2
+fi
+
+# Read the allowed scopes, one per line, ignoring comments and blank lines.
+mapfile -t scopes < <(grep -vE '^[[:space:]]*(#|$)' "$SCOPES_FILE_PATH" | sed -E 's/^[[:space:]]+|[[:space:]]+$//g')
+if [ "${#scopes[@]}" -eq 0 ]; then
+    report_error "No allowed scope found in \`${SCOPES_FILE_PATH}\`."
+    exit 2
+fi
 
 # ------------------------------------------------------------------------------
 
@@ -64,21 +107,12 @@ get_format_error() {
 
 # ------------------------------------------------------------------------------
 
-# Read the allowed scopes, one per line, ignoring comments and blank lines.
-mapfile -t scopes < <(grep -vE '^[[:space:]]*(#|$)' "$SCOPES_FILE_PATH" | sed -E 's/^[[:space:]]+|[[:space:]]+$//g')
-if [ "${#scopes[@]}" -eq 0 ]; then
-    report_error "No allowed scope found in \`${SCOPES_FILE_PATH}\`."
-    exit 2
-fi
-
 # Escape the regex special characters of each scope, then join them with `|`.
 ALLOWED_SCOPES=$(printf '%s\n' "${scopes[@]}" | sed -E 's/[][\\.^$*+?(){}|]/\\&/g' | paste -sd'|')
 readonly ALLOWED_SCOPES
 
-DISPLAYED_SCOPES=$(printf '`%s`, ' "${scopes[@]}")
+DISPLAYED_SCOPES=$(printf "\`%s\`, " "${scopes[@]}")
 readonly DISPLAYED_SCOPES
-
-readonly PR_ID_SUFFIX=" (#${PR_NUMBER})"
 
 readonly SUBJECT_REGEX='.*[^ ]'
 readonly SCOPE_REGEX="\\((${ALLOWED_SCOPES})\\)"
@@ -108,11 +142,19 @@ is_touching_src_or_tests() {
 
 # ------------------------------------------------------------------------------
 
+PR_ID_SUFFIX=$(get_pr_id_suffix "$PR_NUMBER")
+readonly PR_ID_SUFFIX
+
 errors=0
 for hash in "${hashes[@]}"; do
     subject=$(git log -1 --format=%s "$hash")
     # The ID is optional here: the format is checked without it.
-    message=${subject% (#[0-9]*)}
+    message=$(strip_pr_id "$subject")
+
+    if has_pr_id "$message"; then
+        report_error "Commit subject must not end with several pull request IDs: \"${subject}\"."
+        continue
+    fi
 
     if ! [[ $message =~ $COMMIT_REGEX ]]; then
         reason=$(get_format_error "$message")

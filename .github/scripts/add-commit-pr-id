@@ -1,0 +1,148 @@
+#!/usr/bin/env bash
+#
+# Copyright (C) 2026  Vates SAS
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
+# ==============================================================================
+# Make the title of every commit of the current branch end with ` (#<pr-number>)`.
+# Commits whose title already ends with this ID only are left untouched, so the script can be run
+# several times.
+#
+# Usage: add-commit-pr-id [--force] <base-sha> <head-sha> <pr-number>
+#
+# - `<base-sha>`: base of the pull request to check and modify.
+# - `<head-sha>`: head of the pull request to check and modify.
+# - `<pr-number>`: number of the pull request.
+# - `--force`: replace the existing pull request IDs of the titles.
+#
+# Every trailing ` (#<digits>)` of a title is considered to be a pull request ID. Without `--force`,
+# the script refuses to rewrite anything if a commit already ends with an ID:
+# base is wrong or the range contains commits of other pull requests.
+# ==============================================================================
+
+set -euo pipefail
+
+SCRIPT_DIR=$(dirname "$(readlink -f "$0")")
+readonly SCRIPT_DIR
+
+readonly AMEND_SCRIPT_PATH="${SCRIPT_DIR}/amend-commit-pr-id"
+
+source "${SCRIPT_DIR}/lib/git.sh"
+source "${SCRIPT_DIR}/lib/pr-id.sh"
+
+# ==============================================================================
+
+readonly FORCE_OPTION="--force"
+
+FORCE=false
+ARGS=()
+for arg in "$@"; do
+    if [ "$arg" = "$FORCE_OPTION" ]; then
+        FORCE=true
+    else
+        ARGS+=("$arg")
+    fi
+done
+readonly FORCE
+readonly ARGS
+
+if [ "${#ARGS[@]}" -ne 3 ]; then
+    echo "Usage: $0 [${FORCE_OPTION}] <base-sha> <head-sha> <pr-number>" >&2
+    exit 2
+fi
+
+BASE_SHA=$(resolve_commit "${ARGS[0]}")
+readonly BASE_SHA
+
+HEAD_SHA=$(resolve_commit "${ARGS[1]}")
+readonly HEAD_SHA
+
+readonly PR_NUMBER=${ARGS[2]}
+
+if ! is_pr_number "$PR_NUMBER"; then
+    echo "Invalid pull request number: \`${PR_NUMBER}\`." >&2
+    exit 2
+fi
+
+# ------------------------------------------------------------------------------
+
+if ! git diff --quiet || ! git diff --cached --quiet; then
+    echo "The working tree has uncommitted changes: commit or stash them first." >&2
+    exit 1
+fi
+
+if [ "$(git rev-parse HEAD)" != "$HEAD_SHA" ]; then
+    echo "\`HEAD\` is not \`${HEAD_SHA}\`: checkout the head of the pull request first." >&2
+    exit 1
+fi
+
+# ------------------------------------------------------------------------------
+
+MERGE_BASE_SHA=$(git merge-base "$BASE_SHA" "$HEAD_SHA")
+readonly MERGE_BASE_SHA
+
+readonly COMMIT_RANGE="${MERGE_BASE_SHA}..${HEAD_SHA}"
+
+if [ -n "$(git rev-list --merges "${MERGE_BASE_SHA}..${HEAD_SHA}")" ]; then
+    echo "Merge commits found in \`${COMMIT_RANGE}\`: this script only supports linear history." >&2
+    exit 1
+fi
+
+mapfile -t hashes < <(git log --format=%H "${MERGE_BASE_SHA}..${HEAD_SHA}")
+
+# ------------------------------------------------------------------------------
+
+PR_ID_SUFFIX=$(get_pr_id_suffix "$PR_NUMBER")
+readonly PR_ID_SUFFIX
+
+missing=0
+foreign=0
+for hash in "${hashes[@]}"; do
+    subject=$(git log -1 --format=%s "$hash")
+    if [ "$(with_pr_id "$subject" "$PR_ID_SUFFIX")" = "$subject" ]; then
+        continue
+    fi
+
+    missing=$((missing + 1))
+    # The title already ends with a pull request ID other than the requested one.
+    if has_pr_id "$subject"; then
+        foreign=$((foreign + 1))
+        echo "Commit ${hash} already has another pull request ID: \"${subject}\"." >&2
+    fi
+done
+
+if [ "$foreign" -ne 0 ] && ! $FORCE; then
+    echo "${foreign} commit(s) of \`${COMMIT_RANGE}\` would have their pull request ID replaced: check the base SHA, or use \`${FORCE_OPTION}\`." >&2
+    exit 1
+fi
+
+if [ "$missing" -eq 0 ]; then
+    echo "Nothing to do: every commit of \`${COMMIT_RANGE}\` already ends with \"${PR_ID_SUFFIX}\"."
+    exit 0
+fi
+
+# ------------------------------------------------------------------------------
+
+readonly PREVIOUS_HEAD=$HEAD_SHA
+printf -v EXEC_COMMAND '%q %q' "$AMEND_SCRIPT_PATH" "$PR_ID_SUFFIX"
+readonly EXEC_COMMAND
+
+if ! rebase_output=$(GIT_SEQUENCE_EDITOR=: git rebase --interactive --exec "$EXEC_COMMAND" "$MERGE_BASE_SHA" 2>&1); then
+    echo "$rebase_output" >&2
+    git rebase --abort || true
+    echo "Rewrite failed, branch restored (previous HEAD: ${PREVIOUS_HEAD})." >&2
+    exit 1
+fi
+
+echo "${missing} commit title(s) updated with \"${PR_ID_SUFFIX}\" (previous HEAD: ${PREVIOUS_HEAD})."
