@@ -18,9 +18,9 @@ from xcp_storage.typing import Any, Callable
 
 # ==============================================================================
 
-def is_callable_with(func: Callable[..., Any], *args: Any, **kwargs: Any) -> bool: # noqa: ANN401
+def is_callable_with(function: Callable[..., Any], *args: Any, **kwargs: Any) -> bool: # noqa: ANN401
     try:
-        inspect.signature(func).bind(*args, **kwargs)
+        inspect.signature(function).bind(*args, **kwargs)
         return True
     except (TypeError, ValueError):
         return False
