@@ -518,7 +518,7 @@ class JsonRpcDispatcher:
         return JsonRpcCallResult(result=result)
 
     @overload
-    def method(self, func: Callable[P, T]) -> Callable[P, T]:
+    def method(self, function: Callable[P, T]) -> Callable[P, T]:
         ...
 
     @overload
@@ -527,7 +527,7 @@ class JsonRpcDispatcher:
 
     def method(
         self,
-        func: Optional[Callable[P, T]] = None,
+        function: Optional[Callable[P, T]] = None,
         *,
         idempotent: bool = True
     ) -> Union[Callable[P, T], Callable[[Callable[P, T]], Callable[P, T]]]:
@@ -552,9 +552,9 @@ class JsonRpcDispatcher:
             target_info._rpc_idempotent = idempotent # noqa: SLF001
             return target
 
-        if func is None:
+        if function is None:
             return register
-        return register(func)
+        return register(function)
 
 # ------------------------------------------------------------------------------
 # Request processor.

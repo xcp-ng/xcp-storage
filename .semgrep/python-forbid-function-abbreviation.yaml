@@ -1,0 +1,48 @@
+rules:
+  - id: python-forbid-function-abbreviation
+    languages: [python]
+    severity: WARNING
+    message: "Name `$NAME` abbreviates `function(s)`: use `function(s)` instead of `fun`, `func` or `fn`."
+    patterns:
+      - pattern-either:
+          - pattern: "$NAME = ..."
+          - pattern: "$NAME: $TYPE"
+          - pattern: "self.$NAME = ..."
+          - pattern: |
+              class $NAME(...):
+                  ...
+          - pattern: |
+              def $NAME(...):
+                  ...
+          - pattern: |
+              def $FUNCTION(..., $NAME, ...):
+                  ...
+          - pattern: |
+              def $FUNCTION(..., *$NAME, ...):
+                  ...
+          - pattern: |
+              def $FUNCTION(..., **$NAME, ...):
+                  ...
+          - pattern: |
+              for $NAME in $ITERABLE:
+                  ...
+          - pattern: |
+              with ... as $NAME:
+                  ...
+      - focus-metavariable: $NAME
+      - metavariable-regex:
+          metavariable: $NAME
+          regex: |-
+            (?x)
+            ^(?=\w+$)
+            (?:
+                (?i:
+                    (?:.*_)?
+                    (?:fun|func|fn|funs|funcs|fns)
+                    (?:_.*)?
+                )
+              |
+                (?:.*[a-z0-9])?
+                (?:Fun|Func|Fn|Funs|Funcs|Fns)
+                (?:[A-Z0-9].*)?
+            )$
