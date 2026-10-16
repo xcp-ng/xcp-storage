@@ -21,6 +21,7 @@ from types import FrameType
 
 import xcp_storage.log as log
 from xcp_storage.rpc.server import RpcApiServer
+from xcp_storage.version import XcpStorageVersion
 
 from xcp_storage.typing import Final, Optional
 
@@ -38,6 +39,12 @@ CONFIG_PATH: Final = "/etc/xcp-storage/rpc.conf"
 # ------------------------------------------------------------------------------
 
 if __name__ == "__main__":
+    logger.info(
+        "Starting xcp-storage-rpc %s with python %s.",
+        XcpStorageVersion.get_description(),
+        sys.version.split()[0]
+    )
+
     config = configparser.ConfigParser()
     config.read(CONFIG_PATH)
 
