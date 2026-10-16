@@ -16,7 +16,15 @@ cmake_minimum_required(VERSION 3.26.4)
 
 # ==============================================================================
 
-project(xcp-storage VERSION 1.0.0 LANGUAGES NONE)
+file(STRINGS ${CMAKE_CURRENT_SOURCE_DIR}/setup.cfg XCP_STORAGE_VERSION_LINE REGEX "^version *=")
+string(REGEX REPLACE "^version *= *" "" XCP_STORAGE_VERSION "${XCP_STORAGE_VERSION_LINE}")
+if (NOT XCP_STORAGE_VERSION)
+    message(FATAL_ERROR "Unable to read the project version from setup.cfg.")
+endif()
+
+project(xcp-storage VERSION ${XCP_STORAGE_VERSION} LANGUAGES NONE)
+
+# ------------------------------------------------------------------------------
 
 # No language is set, so we must specify this constant to use `GNUInstallDirs`
 # otherwise `gcc` is involved to compute `CMAKE_INSTALL_LIBDIR`. And this compiler
@@ -33,6 +41,35 @@ find_package(PkgConfig REQUIRED)
 if (NOT DEFINED SYSTEMD_SYSTEM_UNIT_DIR)
     pkg_get_variable(SYSTEMD_SYSTEM_UNIT_DIR systemd systemdsystemunitdir)
 endif()
+
+# ------------------------------------------------------------------------------
+# Build info: generate `xcp_storage/build_info.py` in the source tree, so that
+# it is part of the Python package.
+# ------------------------------------------------------------------------------
+
+set(XCP_STORAGE_GIT_COMMIT "unknown")
+find_package(Git QUIET)
+if (GIT_FOUND)
+    execute_process(
+        COMMAND ${GIT_EXECUTABLE} describe --always --dirty --abbrev=12
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+        OUTPUT_VARIABLE GIT_DESCRIBE_OUTPUT
+        RESULT_VARIABLE GIT_DESCRIBE_RESULT
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+        ERROR_QUIET
+    )
+    if (GIT_DESCRIBE_RESULT EQUAL 0)
+        set(XCP_STORAGE_GIT_COMMIT "${GIT_DESCRIBE_OUTPUT}")
+    endif()
+endif()
+
+string(TIMESTAMP XCP_STORAGE_BUILD_DATE "%Y-%m-%dT%H:%M:%SZ" UTC)
+
+configure_file(
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/xcp_storage/build_info.py.in
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/xcp_storage/build_info.py
+    @ONLY
+)
 
 # ------------------------------------------------------------------------------
 # Daemons.
