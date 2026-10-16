@@ -15,12 +15,19 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 import configparser
+import sys
 
+import xcp_storage.log as log
 from xcp_storage.rpc.server import RpcApiServer
+from xcp_storage.version import XcpStorageVersion
 
 from xcp_storage.typing import Final
 
 # ==============================================================================
+
+logger = log.get_logger() # Use default logger.
+
+# ------------------------------------------------------------------------------
 
 DEFAULT_ADDRESS: Final = "0.0.0.0" # noqa: S104
 DEFAULT_PORT: Final = 3630
@@ -30,6 +37,12 @@ CONFIG_PATH: Final = "/etc/xcp-storage/rpc.conf"
 # ------------------------------------------------------------------------------
 
 if __name__ == "__main__":
+    logger.info(
+        "Starting xcp-storage-rpc %s with python %s.",
+        XcpStorageVersion.get_description(),
+        sys.version.split()[0]
+    )
+
     config = configparser.ConfigParser()
     config.read(CONFIG_PATH)
 
