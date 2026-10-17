@@ -20,6 +20,7 @@ from types import TracebackType
 from xcp_storage.network.socket import (
     create_client_sock,
     Socket,
+    SocketCertificateError,
     SocketDisconnectedError,
 )
 from xcp_storage.utils.sync import wait_for_condition
@@ -119,16 +120,23 @@ class TcpClient(contextlib.AbstractContextManager):
                     timeout=connect_timeout,
                     ssl_context=self._ssl_context
                 ))
+            except SocketCertificateError as e:
+                exception = e
+                # A certificate error will not disappear by retrying: stop now.
+                return True
             except Exception as e:
                 exception = e
-                return False
+                return False # Retry!
 
             # Ensure that client timeout is used after this point, not the connection timeout.
             client_socket.timeout = self._client_timeout
             self._socket = client_socket
             return True
 
-        if not wait_for_condition(connect_impl, timeout=timeout, interval=1):
+        if (
+            not wait_for_condition(connect_impl, timeout=timeout, interval=1) or
+            not self._socket # Not set in case of `SocketCertificateError` exception.
+        ):
             raise TcpClientError("Unable to connect to server.") from exception
 
     def disconnect(self) -> None:

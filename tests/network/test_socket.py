@@ -37,6 +37,7 @@ from xcp_storage.network.socket import (
     socket_receive,
     socket_send,
     socket_wait_readable,
+    SocketCertificateError,
     SocketDisconnectedError,
     SocketError,
     SocketTimeoutError,
@@ -195,6 +196,35 @@ class TestSocketCreate:
         with pytest.raises(SocketError, match="Failed to connect client sock."):
             create_client_sock("127.0.0.1", 8888)
 
+        mock_socket.close.assert_called_once()
+
+    @pytest.mark.parametrize("exception", [
+        ssl.CertificateError("Hostname mismatch."),
+        ssl.SSLError(1, "[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed"),
+    ], ids=["certificate_error", "verify_failed_reason"])
+    def test_create_client_sock_with_ssl_certificate_error(
+        self, mock_socket_class: MagicMock, exception: Exception
+    ) -> None:
+        mock_socket = mock_socket_class.return_value
+        mock_socket.connect.side_effect = exception
+        # TODO(XCPNG-3032): Workaround for old python versions. Modify me later.
+        # The reason is not always filled by the `ssl.SSLError` constructor, depending on the Python version.
+        if isinstance(exception, ssl.SSLError):
+            exception.reason = "CERTIFICATE_VERIFY_FAILED"
+
+        with pytest.raises(SocketCertificateError, match="Failed to verify the server certificate."):
+            create_client_sock("127.0.0.1", 8888)
+
+        mock_socket.close.assert_called_once()
+
+    def test_create_client_sock_with_ssl_non_certificate_error(self, mock_socket_class: MagicMock) -> None:
+        mock_socket = mock_socket_class.return_value
+        mock_socket.connect.side_effect = ssl.SSLError(1, "[SSL: WRONG_VERSION_NUMBER] wrong version number")
+
+        with pytest.raises(SocketError, match="Failed to connect client sock.") as exc_info:
+            create_client_sock("127.0.0.1", 8888)
+
+        assert not isinstance(exc_info.value, SocketCertificateError)
         mock_socket.close.assert_called_once()
 
     @pytest.mark.parametrize("family_code, family_str", [
