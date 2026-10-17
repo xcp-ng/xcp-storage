@@ -1,0 +1,16 @@
+rules:
+  - id: python-enforce-context-manager-enter-signature
+    languages: [python]
+    severity: WARNING
+    message: "`$FUNCTION` must only take `self` and have a return type annotation."
+    patterns:
+      - pattern: |
+          def $FUNCTION(...):
+              ...
+      - metavariable-regex:
+          metavariable: $FUNCTION
+          regex: '^__a?enter__$'
+      - pattern-not: |
+          def $FUNCTION(self) -> $RETURN:
+              ...
+      - focus-metavariable: $FUNCTION
