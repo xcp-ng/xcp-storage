@@ -253,9 +253,11 @@ class TestTcpClient:
             ssl_context=ssl.create_default_context(),
             client_timeout=CLIENT_TIMEOUT
         )
+        # A certificate error is not transient: connect must fail at once instead of retrying until the timeout.
+        start_time = time.monotonic()
         with pytest.raises(TcpClientError, match="Unable to connect to server."):
-            tcp_client.connect()
-
+            tcp_client.connect(timeout=30.0)
+        assert time.monotonic() - start_time < CLIENT_TIMEOUT
         assert not tcp_client.connected
 
     @pytest.mark.parametrize("tcp_server", [EchoServer], indirect=True)
