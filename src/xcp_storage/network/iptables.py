@@ -48,6 +48,14 @@ def _save_iptables_changes() -> None:
 
 # ------------------------------------------------------------------------------
 
+def _run_iptables_command(flag: str, rule: List[str]) -> None:
+    run_command([_EXEC_PATH_IPTABLES, flag] + rule, expected_ret_code=0)
+
+def _try_iptables_command(flag: str, rule: List[str]) -> Tuple[str, str, int]:
+    return run_command([_EXEC_PATH_IPTABLES, flag] + rule, simple=False)
+
+# ------------------------------------------------------------------------------
+
 def _is_fatal_iptables_code(code: int) -> bool:
     # Documented by manual of iptables:
     # 0 for correct exit.
@@ -62,7 +70,7 @@ def _is_fatal_iptables_code(code: int) -> bool:
 def has_iptables_rule(rule: List[str]) -> bool:
     code: Optional[int]
     try:
-        _stdout, reason, code = run_command([_EXEC_PATH_IPTABLES, "-C"] + rule, simple=False)
+        _stdout, reason, code = _try_iptables_command("-C", rule)
         if not _is_fatal_iptables_code(code):
             return not code
     except CommandError as e:
@@ -73,19 +81,19 @@ def has_iptables_rule(rule: List[str]) -> bool:
 
 def _ensure_iptables_chain_exists(chain: str) -> bool:
     try:
-        _stdout, _stderr, ret_code = run_command([_EXEC_PATH_IPTABLES, "-N", chain], simple=False)
+        _stdout, _stderr, ret_code = _try_iptables_command("-N", [chain])
         if _is_fatal_iptables_code(ret_code):
             raise IptablesError(f"Failed to test existence of iptables chain `{chain}`: `{_stderr}`.", ret_code)
         updated = not ret_code
 
         return_rule = [chain, "-j", "RETURN"]
         if not has_iptables_rule(return_rule):
-            run_command([_EXEC_PATH_IPTABLES, "-A"] + return_rule, expected_ret_code=0)
+            _run_iptables_command("-A", return_rule)
             updated = True
 
         jump_rule = [_MAIN_FIREWALL_INPUT_CHAIN, "-j", chain]
         if not has_iptables_rule(jump_rule):
-            run_command([_EXEC_PATH_IPTABLES, "-I"] + jump_rule, expected_ret_code=0)
+            _run_iptables_command("-I", jump_rule)
             updated = True
     except CommandError as e:
         raise IptablesError(f"Failed to set up iptables chain `{chain}`: `{e.reason}`.", e.code) from None
@@ -107,14 +115,14 @@ def _update_iptables_ports(protocol: str, str_ports: str, *, open_ports: bool, s
     if open_ports:
         _ensure_iptables_chain_exists(chain)
         try:
-            run_command([_EXEC_PATH_IPTABLES, "-I"] + rule, expected_ret_code=0)
+            _run_iptables_command("-I", rule)
         except CommandError as e:
             raise IptablesError(
                 f"Failed to open {protocol.upper()} port(s): `{e.reason}`.", e.code
             ) from None
     else:
         try:
-            run_command([_EXEC_PATH_IPTABLES, "-D"] + rule, expected_ret_code=0)
+            _run_iptables_command("-D", rule)
         except CommandError as e:
             raise IptablesError(
                 f"Failed to close {protocol.upper()} port(s): `{e.reason}`.", e.code
