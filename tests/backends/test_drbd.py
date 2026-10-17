@@ -21,6 +21,7 @@ from unittest.mock import (
 import pytest
 
 from xcp_storage.backends.drbd import (
+    _DRBDSETUP_TIMEOUT,
     _get_drbd_status,
     Drbd,
     DrbdOpener,
@@ -87,7 +88,7 @@ class TestGetDrbdStatus:
         assert status["name"] == "xcp-volume-patate"
         assert status["role"] == "Primary"
         mock_run_command.assert_called_once_with(
-            ["/usr/sbin/drbdsetup", "status", "xcp-volume-patate", "--json"], simple=False
+            ["/usr/sbin/drbdsetup", "status", "xcp-volume-patate", "--json"], simple=False, timeout=_DRBDSETUP_TIMEOUT
         )
 
     def test_command_failure(self, mock_run_command: MagicMock, caplog: pytest.LogCaptureFixture) -> None:
