@@ -1,0 +1,42 @@
+rules:
+  - id: python-enforce-error-variable-suffix
+    languages: [python]
+    severity: WARNING
+    message: "Error variable `$VAR` must be named `error` or end with `_error`."
+    patterns:
+      - pattern-either:
+          - patterns:
+              - pattern-either:
+                  - pattern: "$VAR = $CLASS(...)"
+                  - pattern: "self.$VAR = $CLASS(...)"
+              - metavariable-regex:
+                  metavariable: $CLASS
+                  regex: '^(?:\w+\.)*\w*Error$'
+          - patterns:
+              - pattern-either:
+                  - pattern: "$VAR: $TYPE"
+                  - pattern: "$VAR: $TYPE = ..."
+                  - pattern: "self.$VAR: $TYPE = ..."
+                  - pattern: |
+                      def $FUNCTION(..., $VAR: $TYPE, ...):
+                          ...
+              - metavariable-regex:
+                  metavariable: $TYPE
+                  regex: |-
+                    (?x)
+                    (?(DEFINE)
+                        (?<ERROR_TYPE>
+                            (?:\w+\.)*\w*Error
+                        )
+                    )
+                    ^(?:
+                        (?&ERROR_TYPE)
+                      | Optional\[\s*(?&ERROR_TYPE)\s*\]
+                      | Union\[.*\b(?&ERROR_TYPE)\b.*\]
+                      | (?&ERROR_TYPE)\s*\|\s*None
+                      | None\s*\|\s*(?&ERROR_TYPE)
+                    )$
+      - focus-metavariable: $VAR
+      - metavariable-regex:
+          metavariable: $VAR
+          regex: '^(?!(?i:(?:.*_)?error)$)\w+$'
