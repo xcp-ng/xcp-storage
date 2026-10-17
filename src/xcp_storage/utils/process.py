@@ -56,7 +56,8 @@ def run_internal_command(
     simple: Literal[True] = True,
     expected_ret_code: Optional[int] = None,
     ret_code_callback: Callable[[str, str, int], int] = default_ret_code_callback,
-    quiet: bool = False
+    quiet: bool = False,
+    timeout: Optional[float] = None
 ) -> str:
     ...
 
@@ -67,7 +68,8 @@ def run_internal_command(
     simple: Literal[False],
     expected_ret_code: Optional[int] = None,
     ret_code_callback: Callable[[str, str, int], int] = default_ret_code_callback,
-    quiet: bool = False
+    quiet: bool = False,
+    timeout: Optional[float] = None
 ) -> Tuple[str, str, int]:
     ...
 
@@ -78,7 +80,8 @@ def run_internal_command(
     simple: bool,
     expected_ret_code: Optional[int] = None,
     ret_code_callback: Callable[[str, str, int], int] = default_ret_code_callback,
-    quiet: bool = False
+    quiet: bool = False,
+    timeout: Optional[float] = None
 ) -> CommandResultType:
     ...
 
@@ -88,7 +91,8 @@ def run_internal_command(
     simple: bool = True,
     expected_ret_code: Optional[int] = None,
     ret_code_callback: Callable[[str, str, int], int] = default_ret_code_callback,
-    quiet: bool = False
+    quiet: bool = False,
+    timeout: Optional[float] = None
 ) -> CommandResultType:
     try:
         # TODO(XCPNG-3032): Remove noqa warn and use `capture_output` after we discontinue support for Python 3.6.
@@ -97,7 +101,8 @@ def run_internal_command(
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             check=False,
-            encoding="utf-8"
+            encoding="utf-8",
+            timeout=timeout
         )
     except Exception as e:
         raise CommandError(None, str(args), reason=f"Failed to run command: `{e}`.") from e
@@ -127,7 +132,8 @@ def run_command(
     simple: Literal[True] = True,
     expected_ret_code: Optional[int] = None,
     ret_code_callback: Callable[[str, str, int], int] = default_ret_code_callback,
-    quiet: bool = False
+    quiet: bool = False,
+    timeout: Optional[float] = None
 ) -> str:
     ...
 
@@ -138,7 +144,8 @@ def run_command(
     simple: Literal[False],
     expected_ret_code: Optional[int] = None,
     ret_code_callback: Callable[[str, str, int], int] = default_ret_code_callback,
-    quiet: bool = False
+    quiet: bool = False,
+    timeout: Optional[float] = None
 ) -> Tuple[str, str, int]:
     ...
 
@@ -148,7 +155,8 @@ def run_command(
     simple: bool = True,
     expected_ret_code: Optional[int] = None,
     ret_code_callback: Callable[[str, str, int], int] = default_ret_code_callback,
-    quiet: bool = False
+    quiet: bool = False,
+    timeout: Optional[float] = None
 ) -> CommandResultType:
     logger.info("Running command `%s`.", " ".join(args))
     return run_internal_command(
@@ -156,7 +164,8 @@ def run_command(
         simple=simple,
         expected_ret_code=expected_ret_code,
         ret_code_callback=ret_code_callback,
-        quiet=quiet
+        quiet=quiet,
+        timeout=timeout
     )
 
 # ------------------------------------------------------------------------------
