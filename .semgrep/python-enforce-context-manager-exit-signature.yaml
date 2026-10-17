@@ -1,0 +1,24 @@
+rules:
+  - id: python-enforce-context-manager-exit-signature
+    languages: [python]
+    severity: WARNING
+    message: >-
+      `$FUNCTION` must have this signature:
+      `(self, exc_type: Optional[Type[BaseException]], exc_value: Optional[BaseException],
+      traceback: Optional[TracebackType]) -> None`.
+    patterns:
+      - pattern: |
+          def $FUNCTION(...):
+              ...
+      - metavariable-regex:
+          metavariable: $FUNCTION
+          regex: '^__a?exit__$'
+      - pattern-not: |
+          def $FUNCTION(
+              self,
+              exc_type: Optional[Type[BaseException]],
+              exc_value: Optional[BaseException],
+              traceback: Optional[TracebackType]
+          ) -> None:
+              ...
+      - focus-metavariable: $FUNCTION
