@@ -30,6 +30,7 @@ from xcp_storage.typing import (
     Final,
     Iterator,
     List,
+    Tuple,
 )
 
 # ==============================================================================
@@ -45,6 +46,8 @@ DRBD_PORT_RANGE: Final = (7000, 8000)
 # ------------------------------------------------------------------------------
 
 _EXEC_PATH_DRBDSETUP: Final = "/usr/sbin/drbdsetup"
+
+_DRBDSETUP_TIMEOUT: Final = 10.0
 
 _REGEX_DRBD_OPENER_LINE: Final = re.compile(r"(.*)\s+(\d+)\s+(\d+)")
 
@@ -87,11 +90,16 @@ def _handle_drbd_json_error() -> Iterator[None]:
     except Exception as e:
         logger.exception("Failed to parse DRBD configuration: `%s`. The JSON format may have changed.", e)
 
+# ------------------------------------------------------------------------------
+
+def _run_drbdsetup_command(*args: str) -> Tuple[str, str, int]:
+    return run_command([_EXEC_PATH_DRBDSETUP, *args], simple=False, timeout=_DRBDSETUP_TIMEOUT)
+
+# ------------------------------------------------------------------------------
+
 def _get_drbd_status(resource_name: str) -> Dict[str, Any]:
     try:
-        stdout, stderr, ret_code = run_command([
-            _EXEC_PATH_DRBDSETUP, "status", resource_name, "--json"
-        ], simple=False)
+        stdout, stderr, ret_code = _run_drbdsetup_command("status", resource_name, "--json")
         if ret_code != 0:
             logger.warning(
                 "Failed to get DRBD status of resource `%s`: `%s` (exit code %d).",
@@ -224,7 +232,7 @@ class Drbd:
         _check_drbd_resource_name(resource_name)
         error_message = ""
         try:
-            _stdout, stderr, ret_code = run_command([_EXEC_PATH_DRBDSETUP, "secondary", resource_name], simple=False)
+            _stdout, stderr, ret_code = _run_drbdsetup_command("secondary", resource_name)
             if not ret_code:
                 return True
             error_message = stderr
