@@ -245,7 +245,7 @@ class JsonRpcRequest(JsonRpcObject):
         }
         if self._params:
             self._payload["params"] = self._params
-        if self._identifier:
+        if self._identifier is not None:
             self._payload["id"] = self._identifier
 
         self._modified = False

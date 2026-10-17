@@ -12,6 +12,8 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+import json
+
 import pytest
 
 from xcp_storage.utils.json import JsonDict, JsonValue
@@ -122,6 +124,16 @@ class TestJsonRpcDispatcherMethod:
 # ------------------------------------------------------------------------------
 
 class TestJsonRpcRequest:
+    @pytest.mark.parametrize("identifier", [0, 42, "", None])
+    def test_supported_request_identifiers(self, identifier: Union[str, int, None]) -> None:
+        request = JsonRpcRequest(identifier, "method")
+        # Only a missing `id` makes a request a notification: `0` and `""` are valid identifiers.
+        assert ("id" in json.loads(request.to_json())) == (identifier is not None)
+
+        json_request = JsonRpcRequest.from_json(request.to_json())
+        assert isinstance(json_request, JsonRpcRequest)
+        assert json_request.identifier == identifier
+
     def test_positional_params(self) -> None:
         dispatcher = JsonRpcDispatcher()
 
