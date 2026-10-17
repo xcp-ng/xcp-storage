@@ -12,12 +12,15 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+import pytest
+
 from xcp_storage.utils.json import JsonDict, JsonValue
 from xcp_storage.utils.json.rpc import (
     JSON_RPC_VERSION,
     JsonRpcBatchRequest,
     JsonRpcBatchResponse,
     JsonRpcDispatcher,
+    JsonRpcError,
     JsonRpcRequest,
     JsonRpcRequestProcessor,
     JsonRpcResponse,
@@ -78,6 +81,18 @@ def assert_response_error(
 # ------------------------------------------------------------------------------
 
 class TestJsonRpcDispatcherMethod:
+    def test_duplicated_method_is_refused(self) -> None:
+        dispatcher = JsonRpcDispatcher()
+
+        @dispatcher.method
+        def add(a: int, b: int) -> int:
+            return a + b
+
+        with pytest.raises(JsonRpcError, match="RPC method `add` is already registered."):
+            @dispatcher.method
+            def add(a: int, b: int) -> int:
+                return a - b
+
     def test_method_is_idempotent_by_default(self) -> None:
         dispatcher = JsonRpcDispatcher()
 

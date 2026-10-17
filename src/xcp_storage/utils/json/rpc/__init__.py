@@ -543,6 +543,8 @@ class JsonRpcDispatcher:
             name = target.__name__
             if self._use_module_name:
                 name = PurePath(inspect.getfile(target)).stem + "." + name
+            if name in self._name_to_method:
+                raise JsonRpcError(f"RPC method `{name}` is already registered.")
             self._name_to_method[name] = target
 
             target_info = cast(Any, target)
