@@ -1,0 +1,3 @@
+from xapi.storage import log as log
+
+def call(dbg, cmd_args, error: bool = True, simple: bool = True, expRc: int = 0): ...
