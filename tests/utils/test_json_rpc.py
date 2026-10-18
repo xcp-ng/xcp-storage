@@ -83,6 +83,15 @@ def assert_response_error(
 # ------------------------------------------------------------------------------
 
 class TestJsonRpcDispatcherMethod:
+    def test_use_module_name(self) -> None:
+        dispatcher = JsonRpcDispatcher(use_module_name=True)
+
+        @dispatcher.method
+        def add(a: int, b: int) -> int:
+            return a + b
+
+        assert cast(Any, add)._rpc_name == "test_json_rpc.add" # noqa: SLF001
+
     def test_duplicated_method_is_refused(self) -> None:
         dispatcher = JsonRpcDispatcher()
 
