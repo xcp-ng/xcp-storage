@@ -12,18 +12,25 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+import pytest
+
 from xcp_storage.utils.json import JsonDict, JsonValue
 from xcp_storage.utils.json.rpc import (
     JSON_RPC_VERSION,
     JsonRpcBatchRequest,
     JsonRpcBatchResponse,
     JsonRpcDispatcher,
+    JsonRpcError,
     JsonRpcRequest,
     JsonRpcRequestProcessor,
     JsonRpcResponse,
 )
 
-from xcp_storage.typing import Union
+from xcp_storage.typing import (
+    Any,
+    cast,
+    Union,
+)
 
 # ==============================================================================
 
@@ -70,6 +77,47 @@ def assert_response_error(
     assert isinstance(response, JsonRpcResponse)
     assert_response_error_impl(response, expected_identifier, expected_error)
     assert_response_error_impl(JsonRpcResponse.from_json(response.to_json()), expected_identifier, expected_error)
+
+# ------------------------------------------------------------------------------
+
+class TestJsonRpcDispatcherMethod:
+    def test_duplicated_method_is_refused(self) -> None:
+        dispatcher = JsonRpcDispatcher()
+
+        @dispatcher.method
+        def add(a: int, b: int) -> int:
+            return a + b
+
+        with pytest.raises(JsonRpcError, match="RPC method `add` is already registered."):
+            @dispatcher.method
+            def add(a: int, b: int) -> int:
+                return a - b
+
+    def test_method_is_idempotent_by_default(self) -> None:
+        dispatcher = JsonRpcDispatcher()
+
+        @dispatcher.method
+        def add(a: int, b: int) -> int:
+            return a + b
+
+        assert add(1, 2) == 3
+
+        method_info = cast(Any, add)
+        assert method_info._rpc_name == "add" # noqa: SLF001
+        assert method_info._rpc_idempotent # noqa: SLF001
+
+    def test_method_with_arguments(self) -> None:
+        dispatcher = JsonRpcDispatcher()
+
+        @dispatcher.method(idempotent=False)
+        def add(a: int, b: int) -> int:
+            return a + b
+
+        assert add(1, 2) == 3
+
+        method_info = cast(Any, add)
+        assert method_info._rpc_name == "add" # noqa: SLF001
+        assert not method_info._rpc_idempotent # noqa: SLF001
 
 # ------------------------------------------------------------------------------
 
