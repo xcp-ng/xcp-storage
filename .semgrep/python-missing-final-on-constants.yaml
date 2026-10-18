@@ -1,0 +1,22 @@
+rules:
+  - id: python-missing-final-on-constants
+    languages: [python]
+    severity: WARNING
+    message: "Constant `$CONST` must be annotated with `Final`. Fix: `$CONST: Final = $VAL`"
+    patterns:
+      - pattern: "$CONST = $VAL"
+      - metavariable-regex:
+          metavariable: $CONST
+          regex: "^[A-Z_][A-Z0-9_]*$"
+      - pattern-not: "$CONST: Final = $VAL"
+      - pattern-not: "$CONST: Final[...] = $VAL"
+      - pattern-not: "$CONST = TypeVar(...)"
+      - pattern-not: "$CONST = ParamSpec(...)"
+      - pattern-not-inside:
+          patterns:
+            - pattern: |
+                class $ENUM(..., $BASE, ...):
+                    ...
+            - metavariable-regex:
+                metavariable: $BASE
+                regex: '^(?:Enum|IntEnum|StrEnum|Flag|IntFlag)$'

@@ -1,0 +1,33 @@
+rules:
+  - id: python-forbid-subprocess-usage
+    languages: [python]
+    severity: WARNING
+    message: "Run commands with `run_command` from `xcp_storage.utils.process`, not directly with `subprocess` or `os`."
+    paths:
+      include:
+        - src/
+      exclude:
+        - src/xcp_storage/utils/process.py
+    pattern-either:
+      - pattern: import subprocess
+      - pattern: from pty import spawn
+      - pattern: pty.spawn(...)
+      - patterns:
+          - pattern-either:
+              - pattern: os.$FUNCTION(...)
+              - pattern: from os import $FUNCTION
+          - metavariable-regex:
+              metavariable: $FUNCTION
+              regex: '^(system|popen|exec.*|spawn.*|posix_spawn.*)$'
+      - patterns:
+          - pattern-either:
+              - pattern: asyncio.$FUNCTION(...)
+              - pattern: from asyncio import $FUNCTION
+          - metavariable-regex:
+              metavariable: $FUNCTION
+              regex: '^create_subprocess_(exec|shell)$'
+      - patterns:
+          - pattern: $OBJECT.$FUNCTION(...)
+          - metavariable-regex:
+              metavariable: $FUNCTION
+              regex: '^subprocess_(exec|shell)$'

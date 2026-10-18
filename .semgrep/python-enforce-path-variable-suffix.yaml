@@ -1,0 +1,44 @@
+rules:
+  - id: python-enforce-path-variable-suffix
+    languages: [python]
+    severity: WARNING
+    message: "Path variable `$VAR` must be named `path` or end with `_path`."
+    patterns:
+      - pattern-either:
+          - patterns:
+              - pattern-either:
+                  - pattern: "$VAR = $CLASS(...)"
+                  - pattern: "$VAR = $CLASS(...) / ..."
+                  - pattern: "self.$VAR = $CLASS(...)"
+                  - pattern: "self.$VAR = $CLASS(...) / ..."
+              - metavariable-regex:
+                  metavariable: $CLASS
+                  regex: '^(Pure)?(Posix|Windows)?Path$'
+          - patterns:
+              - pattern-either:
+                  - pattern: "$VAR: $TYPE"
+                  - pattern: "$VAR: $TYPE = ..."
+                  - pattern: "self.$VAR: $TYPE = ..."
+                  - pattern: |
+                      def $FUNCTION(..., $VAR: $TYPE, ...):
+                          ...
+              - metavariable-regex:
+                  metavariable: $TYPE
+                  regex: |-
+                    (?x)
+                    (?(DEFINE)
+                        (?<PATH_TYPE>
+                            (?:Pure)?(?:Posix|Windows)?Path
+                        )
+                    )
+                    ^(?:
+                        (?&PATH_TYPE)
+                      | Optional\[\s*(?&PATH_TYPE)\s*\]
+                      | Union\[.*\b(?&PATH_TYPE)\b.*\]
+                      | (?&PATH_TYPE)\s*\|\s*None
+                      | None\s*\|\s*(?&PATH_TYPE)
+                    )$
+      - focus-metavariable: $VAR
+      - metavariable-regex:
+          metavariable: $VAR
+          regex: '^(?!(?i:(?:.*_)?path)$)\w+$'

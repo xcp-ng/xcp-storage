@@ -1,0 +1,18 @@
+rules:
+  - id: python-enforce-enum-uppercase-members
+    languages: [python]
+    severity: WARNING
+    message: "Enum member `$MEMBER` must respect UPPER_CASE style."
+    patterns:
+      - pattern: |
+          class $ENUM(..., $BASE, ...):
+              ...
+              $MEMBER = $VAL
+              ...
+      - metavariable-regex:
+          metavariable: $BASE
+          regex: '^(?:enum\.)?(?:Enum|IntEnum|StrEnum|Flag|IntFlag)$'
+      - focus-metavariable: $MEMBER
+      - metavariable-regex:
+          metavariable: $MEMBER
+          regex: '^(?![A-Z][A-Z0-9_]*$)'

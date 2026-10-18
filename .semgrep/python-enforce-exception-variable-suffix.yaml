@@ -1,0 +1,47 @@
+rules:
+  - id: python-enforce-exception-variable-suffix
+    languages: [python]
+    severity: WARNING
+    message: "Exception variable `$VAR` must be named `exception` or end with `_exception`."
+    patterns:
+      - pattern-either:
+          - patterns:
+              - pattern-either:
+                  - pattern: "$VAR = $CLASS(...)"
+                  - pattern: "self.$VAR = $CLASS(...)"
+              - metavariable-regex:
+                  metavariable: $CLASS
+                  regex: '^(?:\w+\.)*\w*Exception$'
+          - patterns:
+              - pattern-either:
+                  - pattern: "$VAR: $TYPE"
+                  - pattern: "$VAR: $TYPE = ..."
+                  - pattern: "self.$VAR: $TYPE = ..."
+                  - patterns:
+                      - pattern: |
+                          def $FUNCTION(..., $VAR: $TYPE, ...):
+                              ...
+                      # Context manager exit methods have their own signature, checked by another rule.
+                      - metavariable-regex:
+                          metavariable: $FUNCTION
+                          regex: '^(?!__a?exit__$)\w+$'
+              - metavariable-regex:
+                  metavariable: $TYPE
+                  regex: |-
+                    (?x)
+                    (?(DEFINE)
+                        (?<EXCEPTION_TYPE>
+                            (?:\w+\.)*\w*Exception
+                        )
+                    )
+                    ^(?:
+                        (?&EXCEPTION_TYPE)
+                      | Optional\[\s*(?&EXCEPTION_TYPE)\s*\]
+                      | Union\[.*\b(?&EXCEPTION_TYPE)\b.*\]
+                      | (?&EXCEPTION_TYPE)\s*\|\s*None
+                      | None\s*\|\s*(?&EXCEPTION_TYPE)
+                    )$
+      - focus-metavariable: $VAR
+      - metavariable-regex:
+          metavariable: $VAR
+          regex: '^(?!(?i:(?:.*_)?exception)$)\w+$'
