@@ -1,0 +1,23 @@
+rules:
+  - id: python-enforce-exception-message-sentence
+    languages: [python]
+    severity: WARNING
+    message: "Exception message must be a sentence: start with a capital letter (or a backtick) and end with a period."
+    paths:
+      include:
+        - src/
+    patterns:
+      - pattern: $CLASS($MESSAGE, ...)
+      - metavariable-regex:
+          metavariable: $CLASS
+          regex: '^(?:\w+\.)*\w*(?:Exception|Error)$'
+      - metavariable-regex:
+          metavariable: $MESSAGE
+          # Only string literals (plain or f-strings) are checked: a dynamic message is out of scope.
+          regex: |-
+            (?xs)
+            ^(?=[fF]?["'])
+            (?!
+                [fF]?["'] [A-Z`] .* [.!?] ["']$
+            )
+      - focus-metavariable: $MESSAGE
