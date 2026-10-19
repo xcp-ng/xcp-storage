@@ -19,6 +19,7 @@ import socket
 import ssl
 import threading
 import time
+from unittest.mock import patch
 
 import pytest
 
@@ -49,6 +50,9 @@ SERVER_SHUTDOWN_TIMEOUT: Final = 5.0
 SERVER_THREAD_SHUTDOWN_TIMEOUT: Final = 5.0
 
 CLIENT_TIMEOUT: Final = 5.0
+
+# Short delay patched in `xcp_storage.utils.asyncio` to avoid waiting for the real TLS shutdown timeout.
+TLS_SHUTDOWN_TIMEOUT: Final = 0.2
 
 # ------------------------------------------------------------------------------
 
@@ -437,6 +441,7 @@ class TestTcpClientServer:
         assert not tcp_client.connected
 
     @pytest.mark.parametrize("tcp_server", [RejectConnectionServer], indirect=True)
+    @patch("xcp_storage.utils.asyncio._TLS_SHUTDOWN_TIMEOUT", TLS_SHUTDOWN_TIMEOUT)
     def test_client_send_to_closed_peer(self, tcp_client_factory: TcpClientFactory) -> None:
         tcp_client = tcp_client_factory()
         tcp_client.connect()
@@ -446,7 +451,8 @@ class TestTcpClientServer:
         assert tcp_client.socket
         assert tcp_client.socket.wait_readable(timeout=2.0)
 
-        deadline = time.monotonic() + 1.0
+        # With TLS, the server only closes the TCP connection after the shutdown timeout.
+        deadline = time.monotonic() + TLS_SHUTDOWN_TIMEOUT + 1.0
         with pytest.raises(SocketDisconnectedError, match="Unable to send data."):
             while time.monotonic() < deadline:
                 tcp_client.send(b"Moshimoshi?")

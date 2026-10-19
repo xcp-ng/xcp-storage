@@ -280,10 +280,11 @@ class TcpServer(ABC):
                 except Exception as e:
                     logger.error("Unhandled exception for client %s during disconnect: `%s`.", client, e)
 
-            await close_stream_writer(client_writer)
-            logger.info("Client %s disconnected.", client)
-            # The client may already have been removed by `_evict_idle_client`.
-            self._clients.discard(client)
+            try:
+                await close_stream_writer(client_writer)
+            finally: # Deal with `CancelledError`.
+                self._clients.discard(client)
+                logger.info("Client %s disconnected.", client)
 
     def _evict_idle_client(self) -> bool:
         # Evict the client that has been idle for the longest time, to make room for a new one.
