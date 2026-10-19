@@ -13,49 +13,24 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 import ssl
-import threading
 
 import pytest
 
-from tests.network.tls import (  # noqa: F401
-    client_ssl_context,
-    ssl_contexts,
-    tls_contexts,
-    TlsContexts,
-)
+from tests.network.tls import client_ssl_context  # noqa: F401
 from xcp_storage.rpc.client import RpcApiClient
 from xcp_storage.rpc.server import RpcApiServer
 
 from xcp_storage.typing import (
     Callable,
     Final,
-    Generator,
     Optional,
 )
 
 # ==============================================================================
 
-SERVER_STARTUP_TIMEOUT: Final = 5.0
-SERVER_SHUTDOWN_TIMEOUT: Final = 5.0
-
-SERVER_THREAD_SHUTDOWN_TIMEOUT: Final = 5.0
-
 CLIENT_TIMEOUT: Final = 1.0
 
 # ------------------------------------------------------------------------------
-
-@pytest.fixture
-def rpc_server(ssl_contexts: Optional[TlsContexts]) -> Generator[RpcApiServer, None, None]: # noqa: F811
-    server = RpcApiServer("127.0.0.1", 0, ssl_context=ssl_contexts.server if ssl_contexts else None)
-    server_thread = threading.Thread(target=server.run, daemon=True)
-    server_thread.start()
-    try:
-        assert server.wait_for_startup(timeout=SERVER_STARTUP_TIMEOUT), "Server not started."
-        yield server
-    finally:
-        server.stop(timeout=SERVER_SHUTDOWN_TIMEOUT)
-        server_thread.join(timeout=SERVER_THREAD_SHUTDOWN_TIMEOUT)
-        assert not server_thread.is_alive(), "Server thread still alive."
 
 RpcClientFactory = Callable[..., RpcApiClient]
 
