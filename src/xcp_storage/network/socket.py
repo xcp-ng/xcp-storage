@@ -65,6 +65,10 @@ class SocketDisconnectedError(SocketError):
     def __init__(self, message: str) -> None:
         super().__init__(message)
 
+class SocketCertificateError(SocketError):
+    def __init__(self, message: str) -> None:
+        super().__init__(message)
+
 # ------------------------------------------------------------------------------
 
 def get_ip_address(address: str, ip_version: int = 0) -> Union[ipaddress.IPv4Address, ipaddress.IPv6Address]:
@@ -165,6 +169,19 @@ def _normalize_and_set_sock_timeout(sock: socket.socket, timeout: Optional[float
 
 # ------------------------------------------------------------------------------
 
+def _is_certificate_error(exception: Exception) -> bool:
+    # TODO(XCPNG-3032): Workaround for old python versions. Remove me later.
+    # We can't use `ssl.SSLCertVerificationError`: it only exists since Python 3.7.
+    # So we use:
+    # - `ssl.CertificateError` for a hostname mismatch.
+    # - `ssl.SSLError` with the reason to check failed cert verification.
+    return (
+        isinstance(exception, ssl.CertificateError)
+        or getattr(exception, "reason", None) == "CERTIFICATE_VERIFY_FAILED"
+    )
+
+# ------------------------------------------------------------------------------
+
 def create_server_sock(
     address: str,
     port: int,
@@ -211,9 +228,11 @@ def create_client_sock(
             _, bind = format_address(source_address, source_port)
             sock.bind(bind)
         sock.connect(connect)
-    except OSError as e:
+    except (OSError, ssl.CertificateError) as e:
         with contextlib.suppress(Exception):
             sock.close()
+        if _is_certificate_error(e):
+            raise SocketCertificateError("Failed to verify the server certificate.") from e
         raise SocketError("Failed to connect client sock.") from e
 
     if keep_alive:

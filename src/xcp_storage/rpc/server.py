@@ -14,6 +14,12 @@
 
 import ssl
 
+from xcp_storage.network.tcp_server import (
+    TCP_SERVER_DEFAULT_CLIENT_CONNECT_TIMEOUT,
+    TCP_SERVER_DEFAULT_CLIENT_IDLE_TIMEOUT,
+    TCP_SERVER_DEFAULT_MAX_CLIENTS,
+)
+
 # Import API mods to ensure ApiDispatcher is exported with all public methods.
 import xcp_storage.rpc.api  # noqa: F401, ICN001
 from xcp_storage.rpc.dispatcher import ApiDispatcher
@@ -29,6 +35,17 @@ class RpcApiServer(JsonRpcServer):
         address: str,
         port: int,
         *,
-        ssl_context: Optional[ssl.SSLContext] = None
+        ssl_context: Optional[ssl.SSLContext] = None,
+        max_clients: Optional[int] = TCP_SERVER_DEFAULT_MAX_CLIENTS,
+        client_connect_timeout: Optional[float] = TCP_SERVER_DEFAULT_CLIENT_CONNECT_TIMEOUT,
+        client_idle_timeout: Optional[float] = TCP_SERVER_DEFAULT_CLIENT_IDLE_TIMEOUT
     ) -> None:
-        super().__init__(ApiDispatcher, address, port, ssl_context=ssl_context)
+        super().__init__(
+            ApiDispatcher,
+            address,
+            port,
+            ssl_context=ssl_context,
+            max_clients=max_clients,
+            client_connect_timeout=client_connect_timeout,
+            client_idle_timeout=client_idle_timeout
+        )

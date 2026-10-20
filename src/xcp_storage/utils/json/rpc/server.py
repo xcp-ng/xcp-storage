@@ -18,7 +18,12 @@ import ssl
 import xcp_storage.log as log
 from xcp_storage.network.protocol import Protocol, ProtocolError
 from xcp_storage.network.protocol.xcp import XcpProtocol
-from xcp_storage.network.tcp_server import TcpServer
+from xcp_storage.network.tcp_server import (
+    TCP_SERVER_DEFAULT_CLIENT_CONNECT_TIMEOUT,
+    TCP_SERVER_DEFAULT_CLIENT_IDLE_TIMEOUT,
+    TCP_SERVER_DEFAULT_MAX_CLIENTS,
+    TcpServer,
+)
 from xcp_storage.utils.json import JsonDict
 from xcp_storage.utils.json.rpc import (
     JsonRpcDispatcher,
@@ -51,9 +56,19 @@ class _JsonRpcServerImpl(TcpServer):
         port: int,
         *,
         ssl_context: Optional[ssl.SSLContext] = None,
-        protocol: Optional[Protocol] = None
+        protocol: Optional[Protocol] = None,
+        max_clients: Optional[int] = TCP_SERVER_DEFAULT_MAX_CLIENTS,
+        client_connect_timeout: Optional[float] = TCP_SERVER_DEFAULT_CLIENT_CONNECT_TIMEOUT,
+        client_idle_timeout: Optional[float] = TCP_SERVER_DEFAULT_CLIENT_IDLE_TIMEOUT
     ) -> None:
-        super().__init__(address, port, ssl_context=ssl_context)
+        super().__init__(
+            address,
+            port,
+            ssl_context=ssl_context,
+            max_clients=max_clients,
+            client_connect_timeout=client_connect_timeout,
+            client_idle_timeout=client_idle_timeout
+        )
         self._dispatcher = dispatcher
         self._protocol = protocol or XcpProtocol()
 
@@ -89,12 +104,19 @@ class _JsonRpcServerImpl(TcpServer):
         protocol_error = False
         try:
             # 1. Get request.
-            request = await self._protocol.receive_packet_async(client.reader, (Protocol.MessageType.REQUEST, ))
+            # Important: The idle timeout only applies to the wait for a request, not to its execution.
+            request = await asyncio.wait_for(
+                self._protocol.receive_packet_async(client.reader, (Protocol.MessageType.REQUEST, )),
+                self.client_idle_timeout
+            )
+
+            # 2. Execute request.
+            # The client can't be evicted while its request is processed.
+            client.mark_busy()
             if _DEBUG_SERVER:
                 logger.debug("Handle client request of %s: %s with payload: `%r`.", client, request, request.payload)
             seq = request.seq
 
-            # 2. Execute request.
             # TODO(XCPNG-3032): Replace with get_running_loop in python 3.7.
             payload = await asyncio.get_event_loop().run_in_executor(
                 None,
@@ -104,6 +126,9 @@ class _JsonRpcServerImpl(TcpServer):
             )
         except asyncio.IncompleteReadError:
             logger.warning("Client connection of %s has been closed during request processing!", client)
+            return False
+        except asyncio.TimeoutError:
+            logger.info("Closing idle client %s: no request received for %ss.", client, self.client_idle_timeout)
             return False
         except ProtocolError as e:
             error_message = str(e)
@@ -122,6 +147,9 @@ class _JsonRpcServerImpl(TcpServer):
         else:
             logger.error("Error on client %s during request processing: `%s`.", client, error_message)
             await self._send_parse_error(client, seq, error_message)
+
+        # No active request: we must mark client.
+        client.mark_idle()
 
         # In case of protocol error, we must close the connection. There are probably remaining bytes to read
         # in the socket (that contains the payload for example).
@@ -155,9 +183,21 @@ class JsonRpcServer:
         port: int,
         *,
         ssl_context: Optional[ssl.SSLContext] = None,
-        protocol: Optional[Protocol] = None
+        protocol: Optional[Protocol] = None,
+        max_clients: Optional[int] = TCP_SERVER_DEFAULT_MAX_CLIENTS,
+        client_connect_timeout: Optional[float] = TCP_SERVER_DEFAULT_CLIENT_CONNECT_TIMEOUT,
+        client_idle_timeout: Optional[float] = TCP_SERVER_DEFAULT_CLIENT_IDLE_TIMEOUT
     ) -> None:
-        self._impl = _JsonRpcServerImpl(dispatcher, address, port, ssl_context=ssl_context, protocol=protocol)
+        self._impl = _JsonRpcServerImpl(
+            dispatcher,
+            address,
+            port,
+            ssl_context=ssl_context,
+            protocol=protocol,
+            max_clients=max_clients,
+            client_connect_timeout=client_connect_timeout,
+            client_idle_timeout=client_idle_timeout
+        )
 
     @property
     def address(self) -> str:
@@ -166,6 +206,18 @@ class JsonRpcServer:
     @property
     def port(self) -> int:
         return self._impl.port
+
+    @property
+    def max_clients(self) -> Optional[float]:
+        return self._impl.max_clients
+
+    @property
+    def client_connect_timeout(self) -> Optional[float]:
+        return self._impl.client_connect_timeout
+
+    @property
+    def client_idle_timeout(self) -> Optional[float]:
+        return self._impl.client_idle_timeout
 
     def run(self) -> None:
         self._impl.run()

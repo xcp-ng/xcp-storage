@@ -45,8 +45,12 @@ CLIENT_TIMEOUT: Final = 1.0
 # ------------------------------------------------------------------------------
 
 @pytest.fixture
-def rpc_server(ssl_contexts: Optional[TlsContexts]) -> Generator[RpcApiServer, None, None]: # noqa: F811
-    server = RpcApiServer("127.0.0.1", 0, ssl_context=ssl_contexts.server if ssl_contexts else None)
+def rpc_server(
+    request: pytest.FixtureRequest,
+    ssl_contexts: Optional[TlsContexts] # noqa: F811
+) -> Generator[RpcApiServer, None, None]:
+    server_class = getattr(request, "param", RpcApiServer)
+    server = server_class("127.0.0.1", 0, ssl_context=ssl_contexts.server if ssl_contexts else None)
     server_thread = threading.Thread(target=server.run, daemon=True)
     server_thread.start()
     try:
