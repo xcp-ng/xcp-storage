@@ -146,7 +146,7 @@ class XcpProtocol(Protocol):
             try:
                 message_type = Protocol.MessageType(message_type)
             except ValueError:
-                raise ProtocolError(f"Invalid message type:`{message_type}`.", seq) from None
+                raise ProtocolError(f"Invalid message type: `{message_type}`.", seq) from None
 
             total_size = XcpProtocol.HEADER_SIZE + payload_size
             if total_size > XcpProtocol.MAX_PACKET_SIZE:
