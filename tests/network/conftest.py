@@ -12,10 +12,23 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+import pytest
+
 from tests.network.tls import (  # noqa: F401
     client_ssl_context,
     ssl_contexts,
     tls_contexts,
 )
+from xcp_storage.network.socket import create_socket_pair, SocketPair
+
+from xcp_storage.typing import Final, Generator
 
 # ==============================================================================
+
+SOCKET_PAIR_TIMEOUT: Final = 3.0
+
+@pytest.fixture
+def socket_pair() -> Generator[SocketPair, None, None]:
+    first, second = create_socket_pair(timeout=SOCKET_PAIR_TIMEOUT)
+    with first, second:
+        yield first, second
