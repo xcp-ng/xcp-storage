@@ -21,6 +21,8 @@ from unittest.mock import (
 import pytest
 
 from xcp_storage.backends.drbd import (
+    _DRBDSETUP_TIMEOUT,
+    _EXEC_PATH_DRBDSETUP,
     _get_drbd_status,
     Drbd,
     DrbdOpener,
@@ -87,7 +89,7 @@ class TestGetDrbdStatus:
         assert status["name"] == "xcp-volume-patate"
         assert status["role"] == "Primary"
         mock_run_command.assert_called_once_with(
-            ["/usr/sbin/drbdsetup", "status", "xcp-volume-patate", "--json"], simple=False
+            [_EXEC_PATH_DRBDSETUP, "status", "xcp-volume-patate", "--json"], simple=False, timeout=_DRBDSETUP_TIMEOUT
         )
 
     def test_command_failure(self, mock_run_command: MagicMock, caplog: pytest.LogCaptureFixture) -> None:
@@ -100,12 +102,12 @@ class TestGetDrbdStatus:
         ) in caplog.text
 
     def test_command_not_found(self, mock_run_command: MagicMock, caplog: pytest.LogCaptureFixture) -> None:
-        mock_run_command.side_effect = FileNotFoundError(2, "No such file or directory", "/usr/sbin/drbdsetup")
+        mock_run_command.side_effect = FileNotFoundError(2, "No such file or directory", _EXEC_PATH_DRBDSETUP)
         with caplog.at_level("INFO"):
             assert _get_drbd_status("xcp-volume-patate") == {}
         assert (
             "Failed to get DRBD status of resource `xcp-volume-patate`: "
-            "`[Errno 2] No such file or directory: '/usr/sbin/drbdsetup'`."
+            f"`[Errno 2] No such file or directory: '{_EXEC_PATH_DRBDSETUP}'`."
         ) in caplog.text
 
     @pytest.mark.parametrize("stdout", ["", "["])
@@ -250,12 +252,12 @@ class TestDemoteDrbd:
         assert Drbd.demote("res-test")
 
     def test_command_not_found(self, mock_run_command: MagicMock, caplog: pytest.LogCaptureFixture) -> None:
-        mock_run_command.side_effect = FileNotFoundError(2, "No such file or directory", "/usr/sbin/drbdsetup")
+        mock_run_command.side_effect = FileNotFoundError(2, "No such file or directory", _EXEC_PATH_DRBDSETUP)
         with caplog.at_level("INFO"):
             assert not Drbd.demote("res-test")
         assert (
             "Failed to demote DRBD resource `res-test`: "
-            "`[Errno 2] No such file or directory: '/usr/sbin/drbdsetup'`."
+            f"`[Errno 2] No such file or directory: '{_EXEC_PATH_DRBDSETUP}'`."
         ) in caplog.text
 
     def test_demote_drbd_open_on_another_node(
