@@ -19,6 +19,7 @@ from pathlib import PurePath
 import time
 
 import xcp_storage.log as log
+from xcp_storage.utils.file import close_fd
 from xcp_storage.utils.lock import (
     Lock,
     LockError,
@@ -78,8 +79,7 @@ class FileLock(Lock):
 
     def __del__(self) -> None:
         if self._fd is not None:
-            with contextlib.suppress(OSError):
-                os.close(self._fd)
+            close_fd(self._fd)
 
     @override
     def acquire(self, *, timeout: Optional[float] = None) -> None:
@@ -128,7 +128,7 @@ class FileLock(Lock):
                 acquired = bool(wait_for_condition(lambda: self._flock(fd, lock_flags), timeout, _FLOCK_POLL_INTERVAL))
         finally:
             if not acquired:
-                os.close(fd)
+                close_fd(fd)
 
         # 3. Update lock and log delay if necessary.
         if acquired:
@@ -167,7 +167,7 @@ class FileLock(Lock):
             with contextlib.suppress(OSError):
                 fcntl.flock(fd, fcntl.LOCK_UN)
         finally:
-            os.close(fd)
+            close_fd(fd)
 
     def _flock(self, fd: int, flags: int) -> bool:
         try:
