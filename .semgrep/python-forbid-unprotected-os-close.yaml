@@ -1,0 +1,20 @@
+rules:
+  - id: python-forbid-unprotected-os-close
+    languages: [python]
+    severity: WARNING
+    message: "`os.close` can raise `OSError`: use `close_fd` instead or catch the exception."
+    patterns:
+      - pattern: os.close(...)
+      - pattern-not-inside: |
+          try:
+              ...
+          except OSError:
+              ...
+      - pattern-not-inside: |
+          try:
+              ...
+          except OSError as $E:
+              ...
+      - pattern-not-inside: |
+          with contextlib.suppress(...):
+              ...

@@ -22,14 +22,9 @@ if (NOT XCP_STORAGE_VERSION)
     message(FATAL_ERROR "Unable to read the project version from setup.cfg.")
 endif()
 
-project(xcp-storage VERSION ${XCP_STORAGE_VERSION} LANGUAGES NONE)
+project(xcp-storage VERSION ${XCP_STORAGE_VERSION} LANGUAGES C)
 
 # ------------------------------------------------------------------------------
-
-# No language is set, so we must specify this constant to use `GNUInstallDirs`
-# otherwise `gcc` is involved to compute `CMAKE_INSTALL_LIBDIR`. And this compiler
-# is not required to build the project so it can fail.
-set(CMAKE_SIZEOF_VOID_P 4)
 
 include(GNUInstallDirs)
 
@@ -76,7 +71,29 @@ configure_file(
 # Daemons.
 # ------------------------------------------------------------------------------
 
+set(CMAKE_C_STANDARD 99)
+set(CMAKE_C_STANDARD_REQUIRED ON)
+set(CMAKE_C_EXTENSIONS ON)
+
+add_compile_options(
+    -Wall
+    -Wcast-align
+    -Wconversion
+    -Wextra
+    -Wfloat-equal
+    -Winit-self
+    -Wlogical-op
+    -Wpointer-arith
+    -Wreturn-type
+    -Wsign-conversion
+    -Wundef
+    -Wuninitialized
+    -Wunused
+    -Wunused-const-variable
+)
+
 set(DAEMON_LIST
+    "xcp-storage-fifo-lock"
     "xcp-storage-rpc"
 )
 
