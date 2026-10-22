@@ -17,6 +17,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+import xcp_storage.log as log
 from xcp_storage.utils.process import CommandError, get_process_cmdline, run_command
 
 from xcp_storage.typing import Final
@@ -55,7 +56,7 @@ class TestGetProcessCmdline:
         cmdline_path = f"/proc/{self.PID}/cmdline"
         mock_read_bytes.side_effect = FileNotFoundError(2, "No such file or directory", cmdline_path)
 
-        with caplog.at_level("INFO"):
+        with caplog.at_level(log.INFO):
             assert get_process_cmdline(self.PID) == []
 
         assert (

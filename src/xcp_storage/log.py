@@ -26,7 +26,16 @@ from xcp_storage.typing import (
 
 # ==============================================================================
 
-_LOG_LEVEL: Final = logging.DEBUG
+# Log levels, re-exported so that the other modules don't have to import `logging`.
+DEBUG: Final = logging.DEBUG
+INFO: Final = logging.INFO
+WARNING: Final = logging.WARNING
+ERROR: Final = logging.ERROR
+CRITICAL: Final = logging.CRITICAL
+
+# ------------------------------------------------------------------------------
+
+_LOG_LEVEL: Final = DEBUG
 
 _LOG_TO_STDERR: Final = True
 _LOG_TO_JOURNAL: Final = False
