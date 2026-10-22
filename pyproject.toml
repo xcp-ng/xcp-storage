@@ -225,6 +225,7 @@ banned-from = [
     "struct",
     "subprocess",
     "sys",
+    "tempfile",
     "threading",
     "time",
     "uuid"
