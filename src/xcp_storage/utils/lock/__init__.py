@@ -14,9 +14,13 @@
 
 from abc import abstractmethod
 import contextlib
+import time
 from types import TracebackType
 
+import xcp_storage.log as log
+
 from xcp_storage.typing import (
+    Final,
     Iterator,
     Optional,
     override,
@@ -24,6 +28,16 @@ from xcp_storage.typing import (
 )
 
 # ==============================================================================
+
+logger = log.get_logger() # Use default logger.
+
+# ------------------------------------------------------------------------------
+
+# Durations (in seconds) above which a slow acquisition / a long hold is logged.
+DEFAULT_LOCK_ACQUIRE_DURATION_THRESHOLD: Final = 1.0
+DEFAULT_LOCK_DURATION_THRESHOLD: Final = 5.0
+
+# ------------------------------------------------------------------------------
 
 class LockError(Exception):
     def __init__(self, message: str) -> None:
@@ -112,3 +126,148 @@ class ReadWriteLock(Lock):
         Release for a reader.
         Raises `LockError` if this object does not hold it.
         """
+
+# ------------------------------------------------------------------------------
+
+class HandleLock(Lock):
+    """
+    Generic exclusive handle lock.
+    It contains the common logic of the locks based on a handle (file descriptor, connection...).
+    """
+
+    def __init__(
+        self,
+        context: str,
+        *,
+        acquire_duration_threshold: Optional[float],
+        lock_duration_threshold: Optional[float]
+    ) -> None:
+        self._context = context
+        self._shared_locked = False
+        self._tracer = LockDurationTracer(
+            context,
+            acquire_duration_threshold=acquire_duration_threshold,
+            lock_duration_threshold=lock_duration_threshold
+        )
+
+    @override
+    def acquire(self, *, timeout: Optional[float] = None) -> None:
+        self._acquire(shared=False, timeout=timeout)
+
+    @override
+    def try_acquire(self) -> bool:
+        return self._try_acquire(shared=False, timeout=0)
+
+    @override
+    def release(self) -> None:
+        self._release(shared=False)
+
+    @abstractmethod
+    def _is_acquired(self) -> bool:
+        pass
+
+    @abstractmethod
+    def _try_acquire(self, *, shared: bool, timeout: Optional[float]) -> bool:
+        pass
+
+    @abstractmethod
+    def _close_handle(self) -> None:
+        pass
+
+    def _acquire(self, *, shared: bool, timeout: Optional[float]) -> None:
+        if not self._try_acquire(shared=shared, timeout=timeout):
+            raise LockTimeoutError(
+                f"Timeout while acquiring {self._get_lock_mode(shared=shared)} lock on `{self._context}`."
+            )
+
+    def _check_not_locked(self) -> None:
+        if self._is_acquired():
+            raise LockError(
+                f"Lock on `{self._context}` is already {self._get_lock_mode(shared=self._shared_locked)} "
+                "locked by this instance."
+            )
+
+    def _notify_acquired(self, *, shared: bool) -> None:
+        self._shared_locked = shared
+        self._tracer.notify_acquired()
+
+    def _release(self, *, shared: bool) -> None:
+        if not self._is_acquired():
+            raise LockError(f"Lock on `{self._context}` is not locked.")
+
+        if self._shared_locked != shared:
+            method_names = ("release", "shared_release")
+            raise LockError(
+                f"Lock on `{self._context}` is {self._get_lock_mode(shared=self._shared_locked)} "
+                f"locked. Incorrect method usage, `{method_names[self._shared_locked]}` must be called "
+                f"instead of `{method_names[not self._shared_locked]}`."
+            )
+
+        self._tracer.notify_released()
+        self._shared_locked = False
+        self._close_handle()
+
+    @staticmethod
+    def _get_lock_mode(*, shared: bool) -> str:
+        return "shared" if shared else "exclusive"
+
+# ------------------------------------------------------------------------------
+
+class ReadWriteHandleLock(HandleLock, ReadWriteLock):
+    """
+    Generic readers-writer handle lock.
+    Any number of concurrent shared readers OR a single exclusive writer based on a handle.
+    """
+
+    @override
+    def shared_acquire(self, *, timeout: Optional[float] = None) -> None:
+        self._acquire(shared=True, timeout=timeout)
+
+    @override
+    def shared_try_acquire(self) -> bool:
+        return self._try_acquire(shared=True, timeout=0)
+
+    @override
+    def shared_release(self) -> None:
+        self._release(shared=True)
+
+# ------------------------------------------------------------------------------
+
+class LockDurationTracer:
+    """
+    Log a warning when a lock takes too long to acquire, or is held for too long.
+    A threshold set to `None` disables the corresponding trace.
+    """
+
+    def __init__(
+        self,
+        context: str,
+        *,
+        acquire_duration_threshold: Optional[float],
+        lock_duration_threshold: Optional[float]
+    ) -> None:
+        self._context = context
+        self._acquire_duration_threshold = acquire_duration_threshold
+        self._lock_duration_threshold = lock_duration_threshold
+        self._acquire_start_time = 0.0
+        self._acquired_at = 0.0
+
+    def start_acquire(self) -> None:
+        self._acquire_start_time = time.monotonic()
+
+    def notify_acquired(self) -> None:
+        self._acquired_at = time.monotonic()
+        if self._acquire_duration_threshold is None:
+            return
+
+        elapsed_time = self._acquired_at - self._acquire_start_time
+        if elapsed_time > self._acquire_duration_threshold:
+            logger.warning("Lock on `%s` took %.2f second(s) to acquire.", self._context, elapsed_time)
+
+    def notify_released(self) -> None:
+        if self._lock_duration_threshold is None:
+            return
+
+        elapsed_time = time.monotonic() - self._acquired_at
+        if elapsed_time > self._lock_duration_threshold:
+            logger.warning("Lock on `%s` locked for %.2f second(s).", self._context, elapsed_time)

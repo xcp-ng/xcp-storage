@@ -16,15 +16,14 @@ import contextlib
 import fcntl
 import os
 from pathlib import PurePath
-import time
 
-import xcp_storage.log as log
 from xcp_storage.utils.file import close_fd
 from xcp_storage.utils.lock import (
-    Lock,
+    DEFAULT_LOCK_ACQUIRE_DURATION_THRESHOLD,
+    DEFAULT_LOCK_DURATION_THRESHOLD,
+    HandleLock,
     LockError,
-    LockTimeoutError,
-    ReadWriteLock,
+    ReadWriteHandleLock,
 )
 from xcp_storage.utils.sync import wait_for_condition
 
@@ -37,21 +36,11 @@ from xcp_storage.typing import (
 
 # ==============================================================================
 
-logger = log.get_logger() # Use default logger.
-
-# ------------------------------------------------------------------------------
-
-# Durations (in seconds) above which a slow acquisition / a long hold is logged.
-DEFAULT_LOCK_ACQUIRE_DURATION_THRESHOLD: Final = 1.0
-DEFAULT_LOCK_DURATION_THRESHOLD: Final = 5.0
-
-# ------------------------------------------------------------------------------
-
 _FLOCK_POLL_INTERVAL: Final = 0.05
 
 # ------------------------------------------------------------------------------
 
-class FileLock(Lock):
+class FileLock(HandleLock):
     """
     Exclusive lock between processes on one machine, based on a lock file.
 
@@ -70,48 +59,38 @@ class FileLock(Lock):
         acquire_duration_threshold: Optional[float] = DEFAULT_LOCK_ACQUIRE_DURATION_THRESHOLD,
         lock_duration_threshold: Optional[float] = DEFAULT_LOCK_DURATION_THRESHOLD
     ) -> None:
-        self._path = str(path)
-        self._acquire_duration_threshold = acquire_duration_threshold
-        self._lock_duration_threshold = lock_duration_threshold
+        # Set first: `__del__` must work even if the validation fails.
         self._fd: Optional[int] = None
-        self._shared_locked = False
-        self._acquired_timestamp = 0.0
+
+        lock_path = str(path)
+        if not lock_path:
+            raise ValueError(f"Invalid lock path `{lock_path}`.")
+
+        super().__init__(
+            lock_path,
+            acquire_duration_threshold=acquire_duration_threshold,
+            lock_duration_threshold=lock_duration_threshold
+        )
+        self._path = lock_path
 
     def __del__(self) -> None:
         if self._fd is not None:
             close_fd(self._fd)
 
-    @override
-    def acquire(self, *, timeout: Optional[float] = None) -> None:
-        self._acquire(shared=False, timeout=timeout)
-
-    @override
-    def try_acquire(self) -> bool:
-        return self._try_acquire(shared=False, timeout=0)
-
-    @override
-    def release(self) -> None:
-        self._release(shared=False)
-
     @property
     def path(self) -> str:
         return self._path
 
-    def _acquire(self, *, shared: bool, timeout: Optional[float]) -> None:
-        if not self._try_acquire(shared=shared, timeout=timeout):
-            raise LockTimeoutError(
-                f"Timeout while acquiring {self._get_lock_mode(shared=shared)} lock on `{self._path}`."
-            )
+    @override
+    def _is_acquired(self) -> bool:
+        return self._fd is not None
 
+    @override
     def _try_acquire(self, *, shared: bool, timeout: Optional[float]) -> bool:
-        if self._fd is not None:
-            raise LockError(
-                f"Lock on `{self._path}` is already {self._get_lock_mode(shared=self._shared_locked)} "
-                "locked by this instance."
-            )
+        self._check_not_locked()
 
         # 1. Open lock path.
-        lock_start_timestamp = time.monotonic()
+        self._tracer.start_acquire()
         try:
             fd = os.open(self._path, os.O_RDONLY | os.O_CREAT | os.O_CLOEXEC, 0o600)
         except OSError as e:
@@ -133,41 +112,18 @@ class FileLock(Lock):
         # 3. Update lock and log delay if necessary.
         if acquired:
             self._fd = fd
-            self._shared_locked = shared
-            self._acquired_timestamp = time.monotonic()
-
-            if self._acquire_duration_threshold is not None:
-                elasped_time = self._acquired_timestamp - lock_start_timestamp
-                if elasped_time > self._acquire_duration_threshold:
-                    logger.warning("Lock on `%s` took %.2f second(s) to acquire.", self._path, elasped_time)
+            self._notify_acquired(shared=shared)
         return acquired
 
-    def _release(self, *, shared: bool) -> None:
-        if self._fd is None:
-            raise LockError(f"Lock on `{self._path}` is not locked.")
-
-        if self._shared_locked != shared:
-            method_names = ("release", "shared_release")
-            raise LockError(
-                f"Lock on `{self._path}` is {self._get_lock_mode(shared=self._shared_locked)} "
-                f"locked. Incorrect method usage, `{method_names[self._shared_locked]}` must be called "
-                f"instead of `{method_names[not self._shared_locked]}`."
-            )
-
-        if self._lock_duration_threshold is not None:
-            elasped_time = time.monotonic() - self._acquired_timestamp
-            if elasped_time > self._lock_duration_threshold:
-                logger.warning("Lock on `%s` locked for %.2f second(s).", self._path, elasped_time)
-
+    @override
+    def _close_handle(self) -> None:
         fd = self._fd
+        assert fd is not None
         self._fd = None
-        self._shared_locked = False
 
-        try:
-            with contextlib.suppress(OSError):
-                fcntl.flock(fd, fcntl.LOCK_UN)
-        finally:
-            close_fd(fd)
+        with contextlib.suppress(OSError):
+            fcntl.flock(fd, fcntl.LOCK_UN)
+        close_fd(fd)
 
     def _flock(self, fd: int, flags: int) -> bool:
         try:
@@ -178,21 +134,7 @@ class FileLock(Lock):
         except OSError as e:
             raise LockError(f"Unable to lock on `{self._path}`.") from e
 
-    @staticmethod
-    def _get_lock_mode(*, shared: bool) -> str:
-        return "shared" if shared else "exclusive"
-
 # ------------------------------------------------------------------------------
 
-class ReadWriteFileLock(FileLock, ReadWriteLock):
-    @override
-    def shared_acquire(self, *, timeout: Optional[float] = None) -> None:
-        self._acquire(shared=True, timeout=timeout)
-
-    @override
-    def shared_try_acquire(self) -> bool:
-        return self._try_acquire(shared=True, timeout=0)
-
-    @override
-    def shared_release(self) -> None:
-        self._release(shared=True)
+class ReadWriteFileLock(FileLock, ReadWriteHandleLock):
+    pass
