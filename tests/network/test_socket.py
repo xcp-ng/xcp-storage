@@ -14,6 +14,7 @@
 
 import errno
 import ipaddress
+from pathlib import Path
 import socket
 import ssl
 from unittest.mock import (
@@ -26,8 +27,11 @@ import pytest
 
 from xcp_storage.network.socket import (
     _SERVER_BACKLOG,
-    create_client_sock,
-    create_server_sock,
+    create_socket_pair,
+    create_tcp_client_sock,
+    create_tcp_server_sock,
+    create_unix_client_sock,
+    create_unix_server_sock,
     format_address,
     get_ip_address,
     get_socket_address,
@@ -40,13 +44,18 @@ from xcp_storage.network.socket import (
     SocketCertificateError,
     SocketDisconnectedError,
     SocketError,
+    SocketNotListeningError,
     SocketTimeoutError,
 )
 
 from xcp_storage.typing import (
+    Callable,
+    cast,
+    Dict,
     Final,
     Iterator,
     Optional,
+    Type,
 )
 
 # ==============================================================================
@@ -109,8 +118,67 @@ class TestAddress:
 
 # ------------------------------------------------------------------------------
 
+CreateSocket = Callable[..., socket.socket]
+
 @patch("socket.socket")
-class TestSocketCreate:
+class TestSocketCreateErrors:
+    SERVER_FACTORIES: Final[Dict[str, CreateSocket]] = {
+        "tcp_server": lambda **kwargs: create_tcp_server_sock("127.0.0.1", 8888, **kwargs),
+        "unix_server": lambda **kwargs: create_unix_server_sock("/unused", **kwargs),
+    }
+    CLIENT_FACTORIES: Final[Dict[str, CreateSocket]] = {
+        "tcp_client": lambda **kwargs: create_tcp_client_sock("127.0.0.1", 8888, **kwargs),
+        "unix_client": lambda **kwargs: create_unix_client_sock("/unused", **kwargs),
+    }
+    ALL_FACTORIES: Final[Dict[str, CreateSocket]] = {**SERVER_FACTORIES, **CLIENT_FACTORIES}
+
+    @pytest.fixture(params=list(ALL_FACTORIES.values()), ids=list(ALL_FACTORIES))
+    def create_socket(self, request: pytest.FixtureRequest) -> CreateSocket:
+        return cast(CreateSocket, request.param)
+
+    def test_socket_creation_failure(self, mock_socket_class: MagicMock, create_socket: CreateSocket) -> None:
+        mock_socket_class.side_effect = OSError(errno.EMFILE, "Too many open files.")
+        with pytest.raises(SocketError, match="Failed to create sock."):
+            create_socket()
+
+    def test_set_timeout_failure(self, mock_socket_class: MagicMock, create_socket: CreateSocket) -> None:
+        mock_socket = mock_socket_class.return_value
+        mock_socket.settimeout.side_effect = OSError(errno.EBADF, "Bad file descriptor.")
+
+        with pytest.raises(SocketError, match="Failed to set sock timeout."):
+            create_socket(timeout=1.0)
+
+        mock_socket.close.assert_called_once()
+
+    @pytest.fixture
+    def timeout_error(self) -> Type[Exception]:
+        first, second = socket.socketpair()
+        with first, second, pytest.raises(OSError) as exc_info:
+            first.settimeout(0.01)
+            first.recv(1)
+        return type(exc_info.value)
+
+    @pytest.mark.parametrize(
+        "create_socket", list(CLIENT_FACTORIES.values()), ids=list(CLIENT_FACTORIES), indirect=True
+    )
+    def test_client_connect_timeout(
+        self,
+        mock_socket_class: MagicMock,
+        create_socket: CreateSocket,
+        timeout_error: Type[Exception]
+    ) -> None:
+        mock_socket = mock_socket_class.return_value
+        mock_socket.connect.side_effect = timeout_error()
+
+        with pytest.raises(SocketTimeoutError):
+            create_socket(timeout=0.1)
+
+        mock_socket.close.assert_called_once()
+
+# ------------------------------------------------------------------------------
+
+@patch("socket.socket")
+class TestTcpSocketCreate:
     @pytest.mark.parametrize("reuse_address", (True, False))
     @pytest.mark.parametrize("keep_alive", (True, False))
     @pytest.mark.parametrize("timeout, expected_timeout", [
@@ -119,7 +187,7 @@ class TestSocketCreate:
         (-1.0, None),
         (None, None)
     ])
-    def test_create_server_sock(
+    def test_create_tcp_server_socket(
         self,
         mock_socket_class: MagicMock,
         *,
@@ -129,7 +197,7 @@ class TestSocketCreate:
         expected_timeout: Optional[float]
     ) -> None:
         mock_socket = mock_socket_class.return_value
-        server_socket = create_server_sock(
+        server_socket = create_tcp_server_sock(
             "127.0.0.1",
             1234,
             reuse_address=reuse_address,
@@ -146,12 +214,12 @@ class TestSocketCreate:
 
         mock_socket.settimeout.assert_called_once_with(expected_timeout)
 
-    def test_create_server_sock_bind_fail(self, mock_socket_class: MagicMock) -> None:
+    def test_create_tcp_server_socket_bind_fail(self, mock_socket_class: MagicMock) -> None:
         mock_socket = mock_socket_class.return_value
         mock_socket.bind.side_effect = OSError("Internal error.")
 
         with pytest.raises(SocketError, match="Failed to bind server sock."):
-            create_server_sock("127.0.0.1", 8888)
+            create_tcp_server_sock("127.0.0.1", 8888)
 
         mock_socket.close.assert_called_once()
 
@@ -163,7 +231,7 @@ class TestSocketCreate:
         (-1.0, None),
         (None, None)
     ])
-    def test_create_client_sock(
+    def test_create_tcp_client_socket(
         self,
         mock_socket_class: MagicMock,
         *,
@@ -173,7 +241,7 @@ class TestSocketCreate:
         expected_timeout: Optional[float]
     ) -> None:
         mock_socket = mock_socket_class.return_value
-        client_socket = create_client_sock(
+        client_socket = create_tcp_client_sock(
             "127.0.0.1",
             1234,
             reuse_address=reuse_address,
@@ -189,20 +257,29 @@ class TestSocketCreate:
 
         mock_socket.settimeout.assert_called_once_with(expected_timeout)
 
-    def test_create_client_sock_connect_fail(self, mock_socket_class: MagicMock) -> None:
+    def test_create_tcp_client_socket_connect_fail(self, mock_socket_class: MagicMock) -> None:
         mock_socket = mock_socket_class.return_value
         mock_socket.connect.side_effect = OSError("Internal error.")
 
         with pytest.raises(SocketError, match="Failed to connect client sock."):
-            create_client_sock("127.0.0.1", 8888)
+            create_tcp_client_sock("127.0.0.1", 8888)
 
+        mock_socket.close.assert_called_once()
+
+    def test_create_tcp_client_socket_with_invalid_source_address(self, mock_socket_class: MagicMock) -> None:
+        mock_socket = mock_socket_class.return_value
+
+        with pytest.raises(SocketError):
+            create_tcp_client_sock("127.0.0.1", 8888, source_address="bad\0host")
+
+        mock_socket.connect.assert_not_called()
         mock_socket.close.assert_called_once()
 
     @pytest.mark.parametrize("exception", [
         ssl.CertificateError("Hostname mismatch."),
         ssl.SSLError(1, "[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed"),
     ], ids=["certificate_error", "verify_failed_reason"])
-    def test_create_client_sock_with_ssl_certificate_error(
+    def test_create_tcp_client_socket_with_ssl_certificate_error(
         self, mock_socket_class: MagicMock, exception: Exception
     ) -> None:
         mock_socket = mock_socket_class.return_value
@@ -213,34 +290,66 @@ class TestSocketCreate:
             exception.reason = "CERTIFICATE_VERIFY_FAILED"
 
         with pytest.raises(SocketCertificateError, match="Failed to verify the server certificate."):
-            create_client_sock("127.0.0.1", 8888)
+            create_tcp_client_sock("127.0.0.1", 8888)
 
         mock_socket.close.assert_called_once()
 
-    def test_create_client_sock_with_ssl_non_certificate_error(self, mock_socket_class: MagicMock) -> None:
+    def test_create_tcp_client_socket_with_ssl_non_certificate_error(self, mock_socket_class: MagicMock) -> None:
         mock_socket = mock_socket_class.return_value
         mock_socket.connect.side_effect = ssl.SSLError(1, "[SSL: WRONG_VERSION_NUMBER] wrong version number")
 
         with pytest.raises(SocketError, match="Failed to connect client sock.") as exc_info:
-            create_client_sock("127.0.0.1", 8888)
+            create_tcp_client_sock("127.0.0.1", 8888)
 
         assert not isinstance(exc_info.value, SocketCertificateError)
         mock_socket.close.assert_called_once()
 
+    @pytest.mark.parametrize("bind", (True, False))
+    def test_create_tcp_socket_with_tls_wrap_failure(self, mock_socket_class: MagicMock, *, bind: bool) -> None:
+        mock_socket = mock_socket_class.return_value
+        ssl_context = MagicMock(spec=ssl.SSLContext)
+        ssl_context.wrap_socket.side_effect = ssl.SSLError(1, "Wrap failure.")
+
+        with pytest.raises(SocketError, match="Failed to wrap sock with TLS."):
+            if bind:
+                create_tcp_server_sock("127.0.0.1", 8888, ssl_context=ssl_context)
+            else:
+                create_tcp_client_sock("127.0.0.1", 8888, ssl_context=ssl_context)
+
+        mock_socket.close.assert_called_once()
+
+# ------------------------------------------------------------------------------
+
+class TestSocketPairCreateErrors:
+    @patch("socket.socketpair")
+    def test_socketpair_creation_failure(self, mock_socketpair: MagicMock) -> None:
+        mock_socketpair.side_effect = OSError(errno.EMFILE, "Too many open files.")
+        with pytest.raises(SocketError, match="Failed to create sock pair."):
+            create_socket_pair()
+
+    @patch("socket.socketpair")
+    def test_set_timeout_failure(self, mock_socketpair: MagicMock) -> None:
+        first, second = MagicMock(), MagicMock()
+        second.settimeout.side_effect = OSError(errno.EBADF, "Bad file descriptor.")
+        mock_socketpair.return_value = (first, second)
+
+        with pytest.raises(SocketError, match="Failed to set sock timeout."):
+            create_socket_pair(timeout=1.0)
+
+        first.close.assert_called_once()
+        second.close.assert_called_once()
+
+# ------------------------------------------------------------------------------
+
+class TestSocketFamily:
     @pytest.mark.parametrize("family_code, family_str", [
         (socket.AF_INET, "IPv4"),
         (socket.AF_INET6, "IPv6"),
         (socket.AF_UNIX, "Unix"),
         (67, "Unknown"),
     ])
-    def test_get_socket_family_str(
-        self, mock_socket_class: MagicMock, family_code: int, family_str: str
-    ) -> None:
-        mock_socket = mock_socket_class.return_value
-        mock_socket.family = family_code
-        assert get_socket_family_str(mock_socket) == family_str
-
-# ------------------------------------------------------------------------------
+    def test_get_socket_family_str(self, family_code: int, family_str: str) -> None:
+        assert get_socket_family_str(MagicMock(family=family_code)) == family_str
 
 class TestSocketAddress:
     def test_get_socket_address(self) -> None:
@@ -422,7 +531,7 @@ class TestSocketWaitReadable:
         mock_select.assert_not_called()
 
     def test_wait_select_exception(self, mock_select: MagicMock, mock_sock: MagicMock) -> None:
-        mock_select.side_effect = OSError(errno.EBADF)
+        mock_select.side_effect = OSError(errno.EBADF, "Bad file descriptor.")
         with pytest.raises(SocketDisconnectedError, match="Unable to wait for data."):
             socket_wait_readable(mock_sock)
 
@@ -435,6 +544,51 @@ class TestSocketWaitReadable:
         mock_select.return_value = ([mock_ssl_sock], [], [])
         assert socket_wait_readable(mock_ssl_sock)
         mock_select.assert_called_once_with([mock_ssl_sock], [], [], None)
+
+# ------------------------------------------------------------------------------
+
+class TestUnixSocket:
+    def test_unix_client_without_socket_file(self, tmp_path: Path) -> None:
+        with pytest.raises(SocketNotListeningError):
+            create_unix_client_sock(str(tmp_path / "missing.sock"))
+
+    def test_unix_client_with_stale_socket_file(self, tmp_path: Path) -> None:
+        socket_path = tmp_path / "stale.sock"
+        create_unix_server_sock(str(socket_path)).close()
+        assert socket_path.exists()
+        with pytest.raises(SocketNotListeningError):
+            create_unix_client_sock(str(socket_path))
+
+    def test_create_unix_server_socket_bind_fail_with_existing_instance(self, tmp_path: Path) -> None:
+        socket_path = str(tmp_path / "unix.sock")
+        with create_unix_server_sock(socket_path), pytest.raises(SocketError, match="Failed to bind UNIX server sock."):
+            create_unix_server_sock(socket_path)
+
+class TestUnixSocketAddress:
+    def test_unix_server_address_is_path(self, tmp_path: Path) -> None:
+        socket_path = str(tmp_path / "unix.sock")
+        with create_unix_server_sock(socket_path) as unix_server:
+            assert get_socket_address(unix_server) == socket_path
+            assert get_socket_port(unix_server) is None
+
+    def test_unnamed_unix_client_has_no_address(self, tmp_path: Path) -> None:
+        socket_path = str(tmp_path / "unix.sock")
+        with create_unix_server_sock(socket_path), create_unix_client_sock(socket_path, timeout=1.0) as unix_client:
+            assert get_socket_address(unix_client) is None
+            assert get_socket_port(unix_client) is None
+
+    def test_socket_pair_has_no_address(self) -> None:
+        first, second = create_socket_pair()
+        with first, second:
+            for sock in (first, second):
+                assert get_socket_address(sock) is None
+                assert get_socket_port(sock) is None
+
+    def test_closed_unix_socket(self, tmp_path: Path) -> None:
+        server_socket = create_unix_server_sock(str(tmp_path / "unix.sock"))
+        server_socket.close()
+        assert get_socket_address(server_socket) is None
+        assert get_socket_port(server_socket) is None
 
 # ------------------------------------------------------------------------------
 

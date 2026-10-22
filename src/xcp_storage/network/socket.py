@@ -24,6 +24,7 @@ from xcp_storage.typing import (
     Any,
     Dict,
     Final,
+    Iterator,
     Optional,
     override,
     Tuple,
@@ -47,6 +48,8 @@ _IP_VERSION_TO_FAMILY: Final = {
 
 _SERVER_BACKLOG: Final = 128
 
+_MAX_PORT: Final = 65535
+
 # Default buffer size used for receiving socket data.
 # Large enough to avoid impacting performance while remaining compatible with most platforms.
 _RECEIVE_BUFFER_SIZE: Final = 8192
@@ -54,18 +57,53 @@ _RECEIVE_BUFFER_SIZE: Final = 8192
 # ------------------------------------------------------------------------------
 
 class SocketError(Exception):
+    """
+    Base class of the errors of this module: its helpers only raise errors derived from it.
+    """
+
     def __init__(self, message: str) -> None:
         super().__init__(message)
 
 class SocketTimeoutError(SocketError):
+    """
+    An operation (connection, send, receive, ...) did not complete in time.
+    """
+
     def __init__(self) -> None:
         super().__init__("Socket timeout.")
 
+class SocketNotListeningError(SocketError):
+    """
+    Nobody listens on the address. Only raised UNIX clients: no socket file, or a stale one.
+    """
+
+    def __init__(self, message: str) -> None:
+        super().__init__(message)
+
+class SocketBusyError(SocketError):
+    """
+    The peer cannot accept new connections for now (its listen queue is full):
+    trying again later can succeed. Only raised by UNIX clients.
+    """
+
+    def __init__(self, message: str) -> None:
+        super().__init__(message)
+
 class SocketDisconnectedError(SocketError):
+    """
+    The connection is closed or lost: the socket is closed, the peer closed it or reset it,
+    or a transfer ended before all the data was sent or received.
+    """
+
     def __init__(self, message: str) -> None:
         super().__init__(message)
 
 class SocketCertificateError(SocketError):
+    """
+    The certificate of a server cannot be verified (untrusted, hostname mismatch...).
+    Trying again does not help.
+    """
+
     def __init__(self, message: str) -> None:
         super().__init__(message)
 
@@ -120,6 +158,8 @@ SocketAddress = Union[IPv4SocketAddress, IPv6SocketAddress]
 def format_address(address: str, port: int) -> Tuple[socket.AddressFamily, SocketAddress]:
     if not address:
         raise SocketError("No hostname/IP.")
+    if not 0 <= port <= _MAX_PORT:
+        raise SocketError(f"Port out of range: {port}.")
 
     ip_address = get_ip_address(address)
     if ip_address.version == 4:
@@ -133,7 +173,13 @@ def format_address(address: str, port: int) -> Tuple[socket.AddressFamily, Socke
 
 # ------------------------------------------------------------------------------
 
-def _create_stream_sock(
+def _create_stream_sock(family: int) -> socket.socket:
+    try:
+        return socket.socket(family, socket.SOCK_STREAM)
+    except OSError as e:
+        raise SocketError("Failed to create sock.") from e
+
+def _create_tcp_sock(
     address: str,
     family: socket.AddressFamily,
     *,
@@ -141,17 +187,23 @@ def _create_stream_sock(
     reuse_address: bool,
     ssl_context: Optional[ssl.SSLContext]
 ) -> socket.socket:
-    sock = socket.socket(family, socket.SOCK_STREAM)
-    if ssl_context:
-        if bind:
-            sock = ssl_context.wrap_socket(sock, server_side=True)
-        else:
-            sock = ssl_context.wrap_socket(sock, server_side=False, server_hostname=address or None)
+    sock = _create_stream_sock(family)
+    with _close_sock_on_error(sock):
+        if ssl_context:
+            try:
+                if bind:
+                    sock = ssl_context.wrap_socket(sock, server_side=True)
+                else:
+                    sock = ssl_context.wrap_socket(sock, server_side=False, server_hostname=address or None)
+            except (OSError, ValueError) as e:
+                raise SocketError("Failed to wrap sock with TLS.") from e
 
     if reuse_address:
         set_socket_reuseaddr(sock)
 
     return sock
+
+# ------------------------------------------------------------------------------
 
 def _normalize_timeout(timeout: Optional[float]) -> Optional[float]:
     # This module only handles blocking sockets, so `0` must be normalized away:
@@ -161,11 +213,36 @@ def _normalize_timeout(timeout: Optional[float]) -> Optional[float]:
         timeout = None
     return timeout
 
-def _normalize_and_set_sock_timeout(sock: socket.socket, timeout: Optional[float]) -> Optional[float]:
+def _normalize_and_set_sock_timeout(sock: socket.socket, timeout: Optional[float]) -> None:
     timeout = _normalize_timeout(timeout)
-    # Always called, including with `None`, so that blocking mode can be restored.
-    sock.settimeout(timeout)
-    return timeout
+    try:
+        # Always called, including with `None`, so that blocking mode can be restored.
+        sock.settimeout(timeout)
+    except OSError as e:
+        raise SocketError("Failed to set sock timeout.") from e
+    except (ValueError, OverflowError) as e:
+        # `nan` is refused with `ValueError`, a too big value with `OverflowError`.
+        raise SocketError("Invalid sock timeout.") from e
+
+@contextlib.contextmanager
+def _raise_on_sock_timeout() -> Iterator[None]:
+    try:
+        yield
+    # TODO(XCPNG-3032): `socket.timeout` is a workaround for python 3.6. Must be removed later.
+    except (TimeoutError, socket.timeout):
+        raise SocketTimeoutError() from None
+
+# ------------------------------------------------------------------------------
+
+@contextlib.contextmanager
+def _close_sock_on_error(*socks: socket.socket) -> Iterator[None]:
+    try:
+        yield
+    except BaseException:
+        for sock in socks:
+            with contextlib.suppress(Exception):
+                sock.close()
+        raise
 
 # ------------------------------------------------------------------------------
 
@@ -182,7 +259,7 @@ def _is_certificate_error(exception: Exception) -> bool:
 
 # ------------------------------------------------------------------------------
 
-def create_server_sock(
+def create_tcp_server_sock(
     address: str,
     port: int,
     *,
@@ -192,23 +269,21 @@ def create_server_sock(
     ssl_context: Optional[ssl.SSLContext] = None
 ) -> socket.socket:
     family, bind = format_address(address, port)
-    sock = _create_stream_sock(address, family, bind=True, reuse_address=reuse_address, ssl_context=ssl_context)
-    _normalize_and_set_sock_timeout(sock, timeout)
-
-    try:
-        sock.bind(bind)
-        sock.listen(_SERVER_BACKLOG)
-    except OSError as e:
-        with contextlib.suppress(Exception):
-            sock.close()
-        raise SocketError("Failed to bind server sock.") from e
+    sock = _create_tcp_sock(address, family, bind=True, reuse_address=reuse_address, ssl_context=ssl_context)
+    with _close_sock_on_error(sock):
+        _normalize_and_set_sock_timeout(sock, timeout)
+        try:
+            sock.bind(bind)
+            sock.listen(_SERVER_BACKLOG)
+        except OSError as e:
+            raise SocketError("Failed to bind server sock.") from e
 
     if keep_alive:
         set_socket_keepalive(sock)
 
     return sock
 
-def create_client_sock(
+def create_tcp_client_sock(
     address: str,
     port: int,
     *,
@@ -220,20 +295,19 @@ def create_client_sock(
     source_port: int = 0
 ) -> socket.socket:
     family, connect = format_address(address, port)
-    sock = _create_stream_sock(address, family, bind=False, reuse_address=reuse_address, ssl_context=ssl_context)
-    _normalize_and_set_sock_timeout(sock, timeout)
-
-    try:
-        if source_address:
-            _, bind = format_address(source_address, source_port)
-            sock.bind(bind)
-        sock.connect(connect)
-    except (OSError, ssl.CertificateError) as e:
-        with contextlib.suppress(Exception):
-            sock.close()
-        if _is_certificate_error(e):
-            raise SocketCertificateError("Failed to verify the server certificate.") from e
-        raise SocketError("Failed to connect client sock.") from e
+    sock = _create_tcp_sock(address, family, bind=False, reuse_address=reuse_address, ssl_context=ssl_context)
+    with _close_sock_on_error(sock):
+        _normalize_and_set_sock_timeout(sock, timeout)
+        try:
+            if source_address:
+                _, bind = format_address(source_address, source_port)
+                sock.bind(bind)
+            with _raise_on_sock_timeout():
+                sock.connect(connect)
+        except (OSError, ssl.CertificateError) as e:
+            if _is_certificate_error(e):
+                raise SocketCertificateError("Failed to verify the server certificate.") from e
+            raise SocketError("Failed to connect client sock.") from e
 
     if keep_alive:
         set_socket_keepalive(sock)
@@ -242,19 +316,47 @@ def create_client_sock(
 
 # ------------------------------------------------------------------------------
 
+def create_unix_server_sock(path: str, *, timeout: Optional[float] = None) -> socket.socket:
+    sock = _create_stream_sock(socket.AF_UNIX)
+    with _close_sock_on_error(sock):
+        _normalize_and_set_sock_timeout(sock, timeout)
+        try:
+            sock.bind(path)
+            sock.listen(_SERVER_BACKLOG)
+        except OSError as e:
+            raise SocketError("Failed to bind UNIX server sock.") from e
+
+    return sock
+
+def create_unix_client_sock(path: str, *, timeout: Optional[float] = None) -> socket.socket:
+    sock = _create_stream_sock(socket.AF_UNIX)
+    with _close_sock_on_error(sock):
+        _normalize_and_set_sock_timeout(sock, timeout)
+        try:
+            with _raise_on_sock_timeout():
+                sock.connect(path)
+        except OSError as e:
+            if e.errno in (errno.ENOENT, errno.ECONNREFUSED):
+                raise SocketNotListeningError("Nobody listens on UNIX sock.") from e
+            if e.errno in (errno.EAGAIN, errno.EWOULDBLOCK):
+                raise SocketBusyError("UNIX server sock is busy.") from e
+            raise SocketError("Failed to connect UNIX client sock.") from e
+
+    return sock
+
+# ------------------------------------------------------------------------------
+
 SocketPair = Tuple[socket.socket, socket.socket]
 
 def create_socket_pair(*, timeout: Optional[float] = None) -> SocketPair:
-    first, second = socket.socketpair()
     try:
+        first, second = socket.socketpair()
+    except OSError as e:
+        raise SocketError("Failed to create sock pair.") from e
+
+    with _close_sock_on_error(first, second):
         _normalize_and_set_sock_timeout(first, timeout)
         _normalize_and_set_sock_timeout(second, timeout)
-    except OSError as e:
-        with contextlib.suppress(Exception):
-            first.close()
-        with contextlib.suppress(Exception):
-            second.close()
-        raise SocketError("Failed to create sock pair.") from e
 
     return first, second
 
@@ -291,25 +393,39 @@ def _get_buffer_size(buffer: Union[bytes, bytearray], size: Optional[int] = None
 
 # ------------------------------------------------------------------------------
 
+def _wait_after_would_block(sock: socket.socket, *, writable: bool, error_message: str) -> None:
+    try:
+        if writable:
+            select.select([], [sock], [])
+        else:
+            select.select([sock], [], [])
+    except OSError as e:
+        raise SocketDisconnectedError(error_message) from e
+    except ValueError as e:
+        if sock.fileno() < 0:
+            raise SocketDisconnectedError(error_message) from e
+        raise SocketError(f"{error_message} Invalid argument.") from e
+
+# ------------------------------------------------------------------------------
+
 def socket_send(sock: socket.socket, buffer: bytes, size: Optional[int] = None) -> None:
+    error_message = "Unable to send data."
     size = _get_buffer_size(buffer, size)
     view = memoryview(buffer)
 
     pos = 0
     while pos < size:
         try:
-            n = sock.send(view[pos:size])
+            with _raise_on_sock_timeout():
+                n = sock.send(view[pos:size])
             if not n:
                 break
             pos += n
-        # TODO(XCPNG-3032): `socket.timeout` is a workaround for python 3.6. Must be removed later.
-        except (TimeoutError, socket.timeout):
-            raise SocketTimeoutError() from None
         except OSError as e:
             if e.errno in (errno.EAGAIN, errno.EWOULDBLOCK):
-                select.select([], [sock], [])
+                _wait_after_would_block(sock, writable=True, error_message=error_message)
                 continue
-            raise SocketDisconnectedError("Unable to send data.") from e
+            raise SocketDisconnectedError(error_message) from e
 
     if pos != size:
         raise SocketDisconnectedError("Not enough data sent.") from None
@@ -317,24 +433,23 @@ def socket_send(sock: socket.socket, buffer: bytes, size: Optional[int] = None) 
 # ------------------------------------------------------------------------------
 
 def socket_receive(sock: socket.socket, buffer: bytearray, size: Optional[int] = None) -> None:
+    error_message = "Unable to receive data."
     size = _get_buffer_size(buffer, size)
     view = memoryview(buffer)
 
     pos = 0
     while pos < size:
         try:
-            n = sock.recv_into(view[pos:], min(size - pos, _RECEIVE_BUFFER_SIZE))
+            with _raise_on_sock_timeout():
+                n = sock.recv_into(view[pos:], min(size - pos, _RECEIVE_BUFFER_SIZE))
             if not n:
                 break
             pos += n
-        # TODO(XCPNG-3032): `socket.timeout` is a workaround for python 3.6. Must be removed later.
-        except (TimeoutError, socket.timeout):
-            raise SocketTimeoutError() from None
         except OSError as e:
             if e.errno in (errno.EAGAIN, errno.EWOULDBLOCK):
-                select.select([sock], [], [])
+                _wait_after_would_block(sock, writable=False, error_message=error_message)
                 continue
-            raise SocketDisconnectedError("Unable to receive data.") from e
+            raise SocketDisconnectedError(error_message) from e
 
     if pos != size:
         raise SocketDisconnectedError("Not enough data received.") from None
@@ -353,6 +468,9 @@ def socket_wait_readable(sock: socket.socket, *, timeout: Optional[float] = None
         readable, _, _ = select.select([sock], [], [], timeout)
     except OSError as e:
         raise SocketDisconnectedError("Unable to wait for data.") from e
+    except (ValueError, OverflowError) as e:
+        # Negative or too big timeout, or file descriptor out of range for `select`.
+        raise SocketError("Unable to wait for data. Invalid argument.") from e
     return bool(readable)
 
 # ------------------------------------------------------------------------------
@@ -362,11 +480,20 @@ def get_socket_family_str(sock: socket.socket) -> str:
 
 def get_socket_address(sock: socket.socket) -> Optional[str]:
     try:
-        return sock.getsockname()[0]
+        name = sock.getsockname()
     except OSError:
         return None
 
+    if sock.family == socket.AF_UNIX:
+        # The name is the path, empty for an unnamed socket (e.g. client side or socket pair) and
+        # `bytes` is returned for an abstract socket.
+        return name if isinstance(name, str) and name else None
+    return name[0]
+
 def get_socket_port(sock: socket.socket) -> Optional[int]:
+    if sock.family == socket.AF_UNIX:
+        return None
+
     try:
         return sock.getsockname()[1]
     except OSError:
@@ -437,6 +564,10 @@ class Socket(contextlib.AbstractContextManager):
 
     @property
     def peer_certificate(self) -> Optional[Dict[str, Any]]:
-        if isinstance(self.sock, ssl.SSLSocket):
-            return self.sock.getpeercert()
+        if isinstance(self.sock, ssl.SSLSocket) and self.sock.fileno() >= 0:
+            try:
+                return self.sock.getpeercert()
+            except (OSError, ValueError) as e:
+                # `OSError`: not connected. `ValueError`: the handshake is not done yet.
+                raise SocketError("Unable to get the peer certificate.") from e
         return None
