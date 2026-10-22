@@ -22,8 +22,8 @@ import pytest
 
 from xcp_storage.backends.linstor.controller import _SERVICE_LINSTOR_CONTROLLER, LinstorController
 from xcp_storage.network.socket import (
-    create_client_sock,
-    create_server_sock,
+    create_tcp_client_sock,
+    create_tcp_server_sock,
     Socket,
     SocketError,
 )
@@ -70,7 +70,7 @@ class TestLinstorControllerGetAddresses:
         spec = cast(TestLinstorControllerGetAddresses.LoopbackSpec, request.param)
         if spec is self.IPV6:
             try:
-                create_server_sock(spec.listener_address, 0).close()
+                create_tcp_server_sock(spec.listener_address, 0).close()
             except SocketError:
                 pytest.skip("IPv6 is not available.")
         return spec
@@ -83,13 +83,13 @@ class TestLinstorControllerGetAddresses:
     @pytest.fixture
     def listen(self, sockets: contextlib.ExitStack) -> ListenFunction:
         def impl(address: str = "127.0.0.1") -> Socket:
-            return sockets.enter_context(Socket(create_server_sock(address, 0)))
+            return sockets.enter_context(Socket(create_tcp_server_sock(address, 0)))
         return impl
 
     @pytest.fixture
     def connect(self, sockets: contextlib.ExitStack) -> ConnectFunction:
         def impl(listener: Socket, client_address: str) -> Tuple[Socket, Socket]:
-            client = sockets.enter_context(Socket(create_client_sock(
+            client = sockets.enter_context(Socket(create_tcp_client_sock(
                 cast(str, listener.address),
                 cast(int, listener.port),
                 source_address=client_address,
