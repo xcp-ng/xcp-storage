@@ -18,7 +18,7 @@ import time
 from types import TracebackType
 
 from xcp_storage.network.socket import (
-    create_client_sock,
+    create_tcp_client_sock,
     Socket,
     SocketCertificateError,
     SocketDisconnectedError,
@@ -112,7 +112,7 @@ class TcpClient(contextlib.AbstractContextManager):
                 connect_timeout = max(connect_timeout - (time.monotonic() - start_time), _MIN_CONNECT_TIMEOUT)
 
             try:
-                client_socket = Socket(create_client_sock(
+                client_socket = Socket(create_tcp_client_sock(
                     self._address,
                     self._port,
                     reuse_address=True,

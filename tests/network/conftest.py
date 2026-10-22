@@ -12,6 +12,8 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+from pathlib import Path
+
 import pytest
 
 from tests.network.tls import (  # noqa: F401
@@ -26,6 +28,14 @@ from xcp_storage.typing import Final, Generator
 # ==============================================================================
 
 SOCKET_PAIR_TIMEOUT: Final = 3.0
+
+@pytest.fixture
+def unix_socket_path(tmp_path: Path) -> str:
+    """
+    Path of a unix socket, not created.
+    """
+
+    return str(tmp_path / "unix.sock")
 
 @pytest.fixture
 def socket_pair() -> Generator[SocketPair, None, None]:

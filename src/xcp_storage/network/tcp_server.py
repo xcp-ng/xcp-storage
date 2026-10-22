@@ -21,7 +21,7 @@ import threading
 import time
 
 import xcp_storage.log as log
-from xcp_storage.network.socket import create_server_sock, Socket
+from xcp_storage.network.socket import create_tcp_server_sock, Socket
 from xcp_storage.utils.asyncio import cancel_event_loop_tasks, close_stream_writer
 
 from xcp_storage.typing import (
@@ -153,7 +153,7 @@ class TcpServer(ABC):
         old_event_loop = None
         try:
             logger.info("Running TCP server on `%s:%d`...", self._address, self._port)
-            self._server_socket = Socket(create_server_sock(
+            self._server_socket = Socket(create_tcp_server_sock(
                 self._address,
                 self._port,
                 reuse_address=True,
