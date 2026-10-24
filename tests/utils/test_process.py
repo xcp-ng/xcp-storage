@@ -17,11 +17,23 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from xcp_storage.utils.process import get_process_cmdline
+from xcp_storage.utils.process import CommandError, get_process_cmdline, run_command
 
 from xcp_storage.typing import Final
 
 # ==============================================================================
+
+class TestRunCommandWithTimeout:
+    def test_timeout(self) -> None:
+        with pytest.raises(CommandError) as exc_info:
+            run_command(["/usr/bin/sleep", "10"], timeout=0.2)
+        assert exc_info.value.code is None
+        assert "timed out" in exc_info.value.reason
+
+    def test_success_within_timeout(self) -> None:
+        assert run_command(["/usr/bin/echo", "hello"], timeout=10.0) == "hello\n"
+
+# ------------------------------------------------------------------------------
 
 @patch.object(Path, "read_bytes")
 class TestGetProcessCmdline:
