@@ -12,8 +12,11 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+from concurrent.futures import ThreadPoolExecutor
+from functools import partial
 import socket
 import ssl
+import time
 from unittest.mock import patch
 
 import pytest
@@ -24,12 +27,14 @@ from xcp_storage.network.protocol import Protocol, ProtocolError
 from xcp_storage.network.protocol.xcp import XcpProtocol
 from xcp_storage.network.socket import SocketDisconnectedError
 from xcp_storage.network.tcp_client import TcpClient, TcpClientError
+import xcp_storage.rpc.api as api
 from xcp_storage.rpc.client import RpcApiClient
 from xcp_storage.rpc.server import RpcApiServer
 from xcp_storage.utils.json import JsonDict
 from xcp_storage.utils.json.rpc import JsonRpcRequestError
 
 from xcp_storage.typing import (
+    Final,
     List,
     Optional,
     Sequence,
@@ -181,3 +186,51 @@ class TestRpcClientServer:
             rpc_client.call("echo.defer_echo", params={"message": "bonjour", "delay": 2.0})
 
         assert not rpc_client.connected
+# ------------------------------------------------------------------------------
+
+class TestRpcServerClientLimits:
+    LONG_CLIENT_TIMEOUT: Final = 3.0
+
+    @pytest.mark.parametrize("rpc_server", [partial(RpcApiServer, client_connect_timeout=0.3)], indirect=True)
+    def test_connect_timeout(self, rpc_server: RpcApiServer) -> None:
+        tcp_client = TcpClient(rpc_server.address, rpc_server.port, client_timeout=self.LONG_CLIENT_TIMEOUT)
+        with tcp_client, pytest.raises(SocketDisconnectedError):
+            tcp_client.receive(bytearray(1))
+
+    @pytest.mark.parametrize("rpc_server", [partial(RpcApiServer, client_idle_timeout=0.3)], indirect=True)
+    def test_idle_client_is_disconnected(self, rpc_client_factory: RpcClientFactory) -> None:
+        rpc_client = rpc_client_factory(client_timeout=self.LONG_CLIENT_TIMEOUT)
+        rpc_client.connect()
+        time.sleep(1.0)
+
+        with pytest.raises(SocketDisconnectedError):
+            rpc_client.call("echo.echo", params={"message": "late"}, retry_on_disconnect=False)
+
+        # The default behavior reconnects.
+        assert rpc_client.call("echo.echo", params={"message": "again"}) == "again"
+
+    @pytest.mark.parametrize("rpc_server", [partial(RpcApiServer, client_idle_timeout=0.3)], indirect=True)
+    def test_busy_client_is_not_closed_by_short_idle_timeout(self, rpc_client_factory: RpcClientFactory) -> None:
+        rpc_client = rpc_client_factory(client_timeout=self.LONG_CLIENT_TIMEOUT)
+        assert rpc_client.call_api(api.echo.defer_echo, message="slow", delay=0.8) == "slow"
+        assert rpc_client.connected
+
+    @pytest.mark.parametrize("rpc_server", [partial(RpcApiServer, max_clients=2)], indirect=True)
+    def test_max_clients_evicts_idle_client_not_busy_one(self, rpc_client_factory: RpcClientFactory) -> None:
+        busy_rpc_client = rpc_client_factory(client_timeout=self.LONG_CLIENT_TIMEOUT)
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            busy_call = executor.submit(busy_rpc_client.call_api, api.echo.defer_echo, message="slow", delay=1.5)
+            # The slow request must have reached the server: this client is the oldest one, and it's busy.
+            time.sleep(0.5)
+
+            idle_rpc_client = rpc_client_factory()
+            assert idle_rpc_client.call("echo.echo", params={"message": "idle"}) == "idle"
+
+            new_rpc_client = rpc_client_factory()
+            assert new_rpc_client.call("echo.echo", params={"message": "new"}) == "new"
+
+            with pytest.raises(SocketDisconnectedError):
+                # Must be evicted.
+                idle_rpc_client.call("echo.echo", params={"message": "late"}, retry_on_disconnect=False)
+
+            assert busy_call.result() == "slow"

@@ -30,6 +30,7 @@ from xcp_storage.typing import (
     Callable,
     Final,
     Generator,
+    List,
     Optional,
 )
 
@@ -45,8 +46,12 @@ CLIENT_TIMEOUT: Final = 1.0
 # ------------------------------------------------------------------------------
 
 @pytest.fixture
-def rpc_server(ssl_contexts: Optional[TlsContexts]) -> Generator[RpcApiServer, None, None]: # noqa: F811
-    server = RpcApiServer("127.0.0.1", 0, ssl_context=ssl_contexts.server if ssl_contexts else None)
+def rpc_server(
+    request: pytest.FixtureRequest,
+    ssl_contexts: Optional[TlsContexts] # noqa: F811
+) -> Generator[RpcApiServer, None, None]:
+    server_class = getattr(request, "param", RpcApiServer)
+    server = server_class("127.0.0.1", 0, ssl_context=ssl_contexts.server if ssl_contexts else None)
     server_thread = threading.Thread(target=server.run, daemon=True)
     server_thread.start()
     try:
@@ -63,12 +68,22 @@ RpcClientFactory = Callable[..., RpcApiClient]
 def rpc_client_factory(
     rpc_server: RpcApiServer,
     client_ssl_context: Optional[ssl.SSLContext] # noqa: F811
-) -> RpcClientFactory:
+) -> Generator[RpcClientFactory, None, None]:
+    rpc_clients: List[RpcApiClient] = []
+
     def factory(*, client_timeout: float = CLIENT_TIMEOUT) -> RpcApiClient:
-        return RpcApiClient(
+        rpc_client = RpcApiClient(
             rpc_server.address,
             rpc_server.port,
             ssl_context=client_ssl_context,
             client_timeout=client_timeout
         )
-    return factory
+        rpc_clients.append(rpc_client)
+        return rpc_client
+
+    yield factory
+
+    # Do not rely on the garbage collector: a test can keep a client alive (e.g. through a mock that wraps
+    # one of its methods), and its socket would stay open after the test.
+    for rpc_client in rpc_clients:
+        rpc_client.disconnect()
