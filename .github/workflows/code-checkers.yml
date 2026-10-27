@@ -91,4 +91,4 @@ jobs:
           python-version: ${{ matrix.python-version }}
 
       - name: Pytest check
-        run: uv run pytest
+        run: uv run pytest --cov --cov-report=term-missing
