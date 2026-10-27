@@ -8,8 +8,9 @@ rules:
       - metavariable-regex:
           metavariable: $CONST
           regex: "^[A-Z_][A-Z0-9_]*$"
-      - pattern-not: "$CONST: Final = $VAL"
-      - pattern-not: "$CONST: Final[...] = $VAL"
+      # We use a regex, not `pattern-not: "$CONST: Final = $VAL"`: semgrep fails to exclude a `Final` constant
+      # when its name is also an imported name (e.g. a class attribute shadowing an imported constant).
+      - pattern-not-regex: '\w+\s*:\s*Final\b'
       - pattern-not: "$CONST = TypeVar(...)"
       - pattern-not: "$CONST = ParamSpec(...)"
       - pattern-not-inside:
