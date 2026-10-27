@@ -83,6 +83,8 @@ ignore = [
     "UP007",  # pyupgrade: non-pep604-annotation-union
     "UP045",  # pyupgrade: non-pep604-annotation-optional
 ]
+preview = true # Used for: RUF052.
+explicit-preview-rules = true
 select = [
     "A",      # flake8-builtins
     "ANN",    # flake8-annotations
@@ -112,6 +114,7 @@ select = [
     "Q",      # flake8-quotes
     "RET",    # flake8-return
     "RUF013", # ruff: implicit-optional
+    "RUF052", # ruff: used-dummy-variable
     "RUF059", # ruff: unused-unpacked-variable
     "S",      # flake8-bandit
     "SIM",    # flake8-simplify
