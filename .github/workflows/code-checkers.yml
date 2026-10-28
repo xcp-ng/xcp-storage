@@ -42,6 +42,13 @@ jobs:
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
+      - name: Semgrep rules validation
+        run: uv run semgrep scan --config .semgrep --validate
+
+      - name: Semgrep rules tests
+        working-directory: .semgrep
+        run: uv run semgrep --test --config . tests
+
       - name: Semgrep scan
         # Python Flask is excluded due to false positive errors in the JSON-RPC utilities.
         run: |
