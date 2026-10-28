@@ -2,24 +2,26 @@ rules:
   - id: python-enforce-exception-variable-suffix
     languages: [python]
     severity: WARNING
-    message: "Exception variable `$VAR` must be named `exception` or end with `_exception`."
+    message: "Exception variable `$VARIABLE` must be named `exception` or end with `_exception`."
     patterns:
       - pattern-either:
+          # Assigned an exception: `x = Exception(...)`.
           - patterns:
               - pattern-either:
-                  - pattern: "$VAR = $CLASS(...)"
-                  - pattern: "self.$VAR = $CLASS(...)"
+                  - pattern: "$VARIABLE = $CLASS(...)"
+                  - pattern: "self.$VARIABLE = $CLASS(...)"
               - metavariable-regex:
                   metavariable: $CLASS
                   regex: '^(?:\w+\.)*\w*Exception$'
+          # Declared as an exception: `x: Optional[Exception]`.
           - patterns:
               - pattern-either:
-                  - pattern: "$VAR: $TYPE"
-                  - pattern: "$VAR: $TYPE = ..."
-                  - pattern: "self.$VAR: $TYPE = ..."
+                  - pattern: "$VARIABLE: $TYPE"
+                  - pattern: "$VARIABLE: $TYPE = ..."
+                  - pattern: "self.$VARIABLE: $TYPE = ..."
                   - patterns:
                       - pattern: |
-                          def $FUNCTION(..., $VAR: $TYPE, ...):
+                          def $FUNCTION(..., $VARIABLE: $TYPE, ...):
                               ...
                       # Context manager exit methods have their own signature, checked by another rule.
                       - metavariable-regex:
@@ -37,11 +39,12 @@ rules:
                     ^(?:
                         (?&EXCEPTION_TYPE)
                       | Optional\[\s*(?&EXCEPTION_TYPE)\s*\]
-                      | Union\[.*\b(?&EXCEPTION_TYPE)\b.*\]
+                      | Final\[\s*(?&EXCEPTION_TYPE)\s*\]
+                      | Union\[.*\b(?&EXCEPTION_TYPE)(?!\w).*\]
                       | (?&EXCEPTION_TYPE)\s*\|\s*None
                       | None\s*\|\s*(?&EXCEPTION_TYPE)
                     )$
-      - focus-metavariable: $VAR
+      - focus-metavariable: $VARIABLE
       - metavariable-regex:
-          metavariable: $VAR
-          regex: '^(?!(?i:(?:.*_)?exception)$)\w+$'
+          metavariable: $VARIABLE
+          regex: '^(?!(?i:(?:\w*_)?exception)$)\w+$'
