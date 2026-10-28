@@ -4,21 +4,21 @@ rules:
     severity: WARNING
     message: "This module is always imported with `from X import ...`, not with `import X`."
     patterns:
-      - pattern: import $MODULE
+      - pattern: "import $MODULE"
       - focus-metavariable: $MODULE
       - metavariable-regex:
           metavariable: $MODULE
           regex: |-
             (?x)
-            ^(
+            ^(?:
                 abc
-              | cryptography(\.\w+)*
+              | cryptography(?:\.\w+)*
               | dataclasses
               | enum
               | functools
               | pathlib
               | types
-              | tests(\.\w+)+
+              | tests(?:\.\w+)+
               | unittest\.mock
-              | xcp_storage\.(?!log$)(?!rpc\.(api|modules)(\.|$))\w+(\.\w+)*
+              | xcp_storage\.(?!log$)(?!rpc\.(?:api|modules)(?:\.|$))\w+(?:\.\w+)*
             )$

@@ -2,17 +2,18 @@ rules:
   - id: python-missing-final-on-constants
     languages: [python]
     severity: WARNING
-    message: "Constant `$CONST` must be annotated with `Final`. Fix: `$CONST: Final = $VAL`"
+    message: "Constant `$CONSTANT` must be annotated with `Final`. Fix: `$CONSTANT: Final = $VALUE`"
     patterns:
-      - pattern: "$CONST = $VAL"
+      - pattern: "$CONSTANT = $VALUE"
       - metavariable-regex:
-          metavariable: $CONST
-          regex: "^[A-Z_][A-Z0-9_]*$"
-      # We use a regex, not `pattern-not: "$CONST: Final = $VAL"`: semgrep fails to exclude a `Final` constant
+          metavariable: $CONSTANT
+         # Note: The lookahead skips names made only of underscores (`_`, `__`).
+          regex: '^(?!_+$)[A-Z_][A-Z0-9_]*$'
+      # We use a regex, not `pattern-not: "$CONSTANT: Final = $VALUE"`: semgrep fails to exclude a `Final` constant
       # when its name is also an imported name (e.g. a class attribute shadowing an imported constant).
       - pattern-not-regex: '\w+\s*:\s*Final\b'
-      - pattern-not: "$CONST = TypeVar(...)"
-      - pattern-not: "$CONST = ParamSpec(...)"
+      - pattern-not: "$CONSTANT = TypeVar(...)"
+      - pattern-not: "$CONSTANT = ParamSpec(...)"
       - pattern-not-inside:
           patterns:
             - pattern: |
@@ -20,4 +21,4 @@ rules:
                     ...
             - metavariable-regex:
                 metavariable: $BASE
-                regex: '^(?:Enum|IntEnum|StrEnum|Flag|IntFlag)$'
+                regex: '^(?:enum\.)?(?:Enum|IntEnum|StrEnum|Flag|IntFlag)$'

@@ -9,25 +9,25 @@ rules:
       exclude:
         - src/xcp_storage/utils/process.py
     pattern-either:
-      - pattern: import subprocess
-      - pattern: from pty import spawn
-      - pattern: pty.spawn(...)
+      - pattern: "import subprocess"
+      - pattern: "from pty import spawn"
+      - pattern: "pty.spawn(...)"
       - patterns:
           - pattern-either:
-              - pattern: os.$FUNCTION(...)
-              - pattern: from os import $FUNCTION
+              - pattern: "os.$FUNCTION(...)"
+              - pattern: "from os import $FUNCTION"
           - metavariable-regex:
               metavariable: $FUNCTION
-              regex: '^(system|popen|exec.*|spawn.*|posix_spawn.*)$'
+              regex: '^(?:system|popen|exec.*|spawn.*|posix_spawn.*)$'
       - patterns:
           - pattern-either:
-              - pattern: asyncio.$FUNCTION(...)
-              - pattern: from asyncio import $FUNCTION
+              - pattern: "asyncio.$FUNCTION(...)"
+              - pattern: "from asyncio import $FUNCTION"
           - metavariable-regex:
               metavariable: $FUNCTION
-              regex: '^create_subprocess_(exec|shell)$'
+              regex: '^create_subprocess_(?:exec|shell)$'
       - patterns:
-          - pattern: $OBJECT.$FUNCTION(...)
+          - pattern: "$OBJECT.$FUNCTION(...)"
           - metavariable-regex:
               metavariable: $FUNCTION
-              regex: '^subprocess_(exec|shell)$'
+              regex: '^subprocess_(?:exec|shell)$'

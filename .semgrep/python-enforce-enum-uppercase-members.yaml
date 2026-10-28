@@ -7,7 +7,7 @@ rules:
       - pattern: |
           class $ENUM(..., $BASE, ...):
               ...
-              $MEMBER = $VAL
+              $MEMBER = $VALUE
               ...
       - metavariable-regex:
           metavariable: $BASE
