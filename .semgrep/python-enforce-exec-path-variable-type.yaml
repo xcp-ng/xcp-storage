@@ -1,0 +1,46 @@
+rules:
+  - id: python-enforce-exec-path-variable-type
+    languages: [python]
+    severity: WARNING
+    message: "Executable path variable `$VARIABLE` must be a `str`, not a path object: it's generally used as the first element of a command, which is a list of strings (`run_command`)."
+    patterns:
+      - pattern-either:
+          # Assigned a path object: `x = Path(...)`.
+          - patterns:
+              - pattern-either:
+                  - pattern: "$VARIABLE = $CLASS(...)"
+                  - pattern: "self.$VARIABLE = $CLASS(...)"
+              - metavariable-regex:
+                  metavariable: $CLASS
+                  regex: '^(?:Pure)?(?:Posix|Windows)?Path$'
+          # Derived with `/`: `x = Path(...) / "y"`, `x = base_path / "y"`. Whatever the base, the result is not
+          # a string (`str` has no `/`).
+          - pattern: "$VARIABLE = $BASE / ..."
+          - pattern: "self.$VARIABLE = $BASE / ..."
+          # Declared as a path object: `x: Final[Path]`.
+          - patterns:
+              - pattern-either:
+                  - pattern: "$VARIABLE: $TYPE"
+                  - pattern: "$VARIABLE: $TYPE = ..."
+                  - pattern: "self.$VARIABLE: $TYPE = ..."
+              - metavariable-regex:
+                  metavariable: $TYPE
+                  regex: |-
+                    (?x)
+                    (?(DEFINE)
+                        (?<PATH_TYPE>
+                            (?:Pure)?(?:Posix|Windows)?Path | StrPath
+                        )
+                    )
+                    ^(?:
+                        (?&PATH_TYPE)
+                      | Optional\[\s*(?&PATH_TYPE)\s*\]
+                      | Final\[\s*(?&PATH_TYPE)\s*\]
+                      | Union\[.*\b(?&PATH_TYPE)(?!\w).*\]
+                      | (?&PATH_TYPE)\s*\|\s*None
+                      | None\s*\|\s*(?&PATH_TYPE)
+                    )$
+      - focus-metavariable: $VARIABLE
+      - metavariable-regex:
+          metavariable: $VARIABLE
+          regex: '^_?EXEC_PATH_\w+$'

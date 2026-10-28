@@ -12,9 +12,9 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-from pathlib import Path
 import subprocess
 
+from xcp_storage.config.platform import PROC_DIR_PATH
 import xcp_storage.log as log
 
 from xcp_storage.typing import (
@@ -171,7 +171,7 @@ def run_command(
 # ------------------------------------------------------------------------------
 
 def get_process_cmdline(pid: int) -> List[str]:
-    path = Path(f"/proc/{pid}/cmdline")
+    path = PROC_DIR_PATH / str(pid) / "cmdline"
     try:
         return [arg.decode(errors="replace") for arg in path.read_bytes().split(b"\0") if arg]
     except Exception as e:

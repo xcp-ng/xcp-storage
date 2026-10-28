@@ -1,0 +1,49 @@
+rules:
+  - id: python-enforce-path-collection-variable-suffix
+    languages: [python]
+    severity: WARNING
+    message: "Variable `$VARIABLE` holds several paths: it must be named `paths` or end with `_paths`."
+    patterns:
+      # Declared as a collection of paths: `x: List[Path]`.
+      - pattern-either:
+          - pattern: "$VARIABLE: $TYPE"
+          - pattern: "$VARIABLE: $TYPE = ..."
+          - pattern: "self.$VARIABLE: $TYPE = ..."
+          - pattern: |
+              def $FUNCTION(..., $VARIABLE: $TYPE, ...):
+                  ...
+      - metavariable-regex:
+          metavariable: $TYPE
+          regex: |-
+            (?x)
+            (?(DEFINE)
+                (?<PATH_TYPE>
+                    (?:Pure)?(?:Posix|Windows)?Path | StrPath
+                )
+                (?<COLLECTION_CLASS>
+                    (?:typing\.)?
+                    (?:
+                        AbstractSet | Collection | FrozenSet | Iterable | Iterator | List
+                      | MutableSequence | MutableSet | Sequence | Set | Tuple
+                      | frozenset | list | set | tuple
+                    )
+                )
+                (?<PATH_COLLECTION_TYPE>
+                    (?&COLLECTION_CLASS)\[\s*(?&PATH_TYPE)\s*
+                    # Optional `, ...` of a tuple of any length: `Tuple[Path, ...]`.
+                    (?:,\s*\.\.\.\s*)?
+                    \]
+                )
+            )
+            ^(?:
+                (?&PATH_COLLECTION_TYPE)
+              | Optional\[\s*(?&PATH_COLLECTION_TYPE)\s*\]
+              | Final\[\s*(?&PATH_COLLECTION_TYPE)\s*\]
+              | Union\[.*\b(?&PATH_COLLECTION_TYPE)(?!\w).*\]
+              | (?&PATH_COLLECTION_TYPE)\s*\|\s*None
+              | None\s*\|\s*(?&PATH_COLLECTION_TYPE)
+            )$
+      - focus-metavariable: $VARIABLE
+      - metavariable-regex:
+          metavariable: $VARIABLE
+          regex: '^(?!(?i:(?:\w*_)?paths)$)\w+$'

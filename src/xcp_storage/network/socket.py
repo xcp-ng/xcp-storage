@@ -27,6 +27,7 @@ from xcp_storage.typing import (
     Iterator,
     Optional,
     override,
+    StrPath,
     Tuple,
     Type,
     Union,
@@ -317,25 +318,25 @@ def create_tcp_client_sock(
 
 # ------------------------------------------------------------------------------
 
-def create_unix_server_sock(path: str, *, timeout: Optional[float] = None) -> socket.socket:
+def create_unix_server_sock(path: StrPath, *, timeout: Optional[float] = None) -> socket.socket:
     sock = _create_stream_sock(socket.AF_UNIX)
     with _close_sock_on_error(sock):
         _normalize_and_set_sock_timeout(sock, timeout)
         try:
-            sock.bind(path)
+            sock.bind(str(path))
             sock.listen(_SERVER_BACKLOG)
         except OSError as e:
             raise SocketError("Failed to bind UNIX server sock.") from e
 
     return sock
 
-def create_unix_client_sock(path: str, *, timeout: Optional[float] = None) -> socket.socket:
+def create_unix_client_sock(path: StrPath, *, timeout: Optional[float] = None) -> socket.socket:
     sock = _create_stream_sock(socket.AF_UNIX)
     with _close_sock_on_error(sock):
         _normalize_and_set_sock_timeout(sock, timeout)
         try:
             with _raise_on_sock_timeout():
-                sock.connect(path)
+                sock.connect(str(path))
         except OSError as e:
             if e.errno in (errno.ENOENT, errno.ECONNREFUSED):
                 raise SocketNotListeningError("Nobody listens on UNIX sock.") from e
