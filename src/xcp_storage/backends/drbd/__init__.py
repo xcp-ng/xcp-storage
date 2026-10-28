@@ -30,6 +30,7 @@ from xcp_storage.typing import (
     Final,
     Iterator,
     List,
+    StrPath,
     Tuple,
 )
 
@@ -39,13 +40,16 @@ logger = log.get_logger() # Use default logger.
 
 # ------------------------------------------------------------------------------
 
-DRBD_BY_RES_PATH: Final = "/dev/drbd/by-res/"
+DRBD_BY_RES_PATH: Final = Path("/dev/drbd/by-res")
+DRBD_BY_RES_PREFIX: Final = f"{DRBD_BY_RES_PATH}/"
 
 DRBD_PORT_RANGE: Final = (7000, 8000)
 
 # ------------------------------------------------------------------------------
 
 _EXEC_PATH_DRBDSETUP: Final = "/usr/sbin/drbdsetup"
+
+_DRBD_DEBUG_RESOURCES_PATH: Final = Path("/sys/kernel/debug/drbd/resources")
 
 _DRBDSETUP_TIMEOUT: Final = 10.0
 
@@ -134,18 +138,19 @@ class DrbdOpener:
 
 class Drbd:
     @staticmethod
-    def build_path(resource_name: str, volume_number: int) -> str:
+    def build_path(resource_name: str, volume_number: int) -> Path:
         _check_drbd_resource_name(resource_name)
         _check_drbd_volume_number(volume_number)
-        return f"{DRBD_BY_RES_PATH}{resource_name}/{volume_number}"
+        return DRBD_BY_RES_PATH / resource_name / str(volume_number)
 
     @staticmethod
-    def get_name_from_path(path: str) -> str:
+    def get_name_from_path(path: StrPath) -> str:
         # Assume that we have a path like this:
         # - "/dev/drbd/by-res/<NAME>/0"
         # - "../<NAME>/0"
-        if path.startswith(DRBD_BY_RES_PATH):
-            prefix_len = len(DRBD_BY_RES_PATH)
+        path = str(path)
+        if path.startswith(DRBD_BY_RES_PREFIX):
+            prefix_len = len(DRBD_BY_RES_PREFIX)
         elif path.startswith("../"):
             prefix_len = 3
         else:
@@ -195,7 +200,7 @@ class Drbd:
         _check_drbd_resource_name(resource_name)
         _check_drbd_volume_number(volume_number)
 
-        path = Path(f"/sys/kernel/debug/drbd/resources/{resource_name}/volumes/{volume_number}/openers")
+        path = _DRBD_DEBUG_RESOURCES_PATH / resource_name / "volumes" / str(volume_number) / "openers"
         try:
             lines = path.read_text().splitlines()
         except Exception as e:

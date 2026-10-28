@@ -12,6 +12,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+from pathlib import Path
 import re
 import time
 
@@ -121,14 +122,14 @@ class FifoLock(HandleLock):
             lock_duration_threshold=lock_duration_threshold
         )
         self._name = name
-        self._path = str(_LOCKS_DIR_PATH / name)
+        self._path = _LOCKS_DIR_PATH / name
 
     @property
     def name(self) -> str:
         return self._name
 
     @property
-    def path(self) -> str:
+    def path(self) -> Path:
         return self._path
 
     @override

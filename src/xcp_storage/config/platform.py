@@ -29,11 +29,12 @@ DEFAULT_FIREWALL_INPUT_CHAIN: Final = "xapi-INPUT"
 # Default system paths.
 # ------------------------------------------------------------------------------
 
+PROC_DIR_PATH: Final = Path("/proc")
 RUNTIME_DIR_PATH: Final = Path("/run")
 
 # ------------------------------------------------------------------------------
 
-_OS_RELEASE_PATH: Final = "/etc/os-release"
+_OS_RELEASE_PATH: Final = Path("/etc/os-release")
 
 @lru_cache(maxsize=None)
 def get_os_ids() -> Tuple[str, ...]:
@@ -44,7 +45,7 @@ def get_os_ids() -> Tuple[str, ...]:
     """
 
     try:
-        lines = Path(_OS_RELEASE_PATH).read_text(encoding="utf-8").splitlines()
+        lines = _OS_RELEASE_PATH.read_text(encoding="utf-8").splitlines()
     except OSError:
         return ()
 

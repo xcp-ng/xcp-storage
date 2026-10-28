@@ -14,7 +14,7 @@
 
 import errno
 import ipaddress
-from pathlib import Path
+from pathlib import Path, PurePath
 import socket
 import ssl
 from unittest.mock import (
@@ -124,15 +124,17 @@ class TestAddress:
 
 CreateSocket = Callable[..., socket.socket]
 
+UNUSED_UNIX_SOCKET_PATH: Final = PurePath("/unused")
+
 @patch("socket.socket")
 class TestSocketCreateErrors:
     SERVER_FACTORIES: Final[Dict[str, CreateSocket]] = {
         "tcp_server": lambda **kwargs: create_tcp_server_sock("127.0.0.1", 8888, **kwargs),
-        "unix_server": lambda **kwargs: create_unix_server_sock("/unused", **kwargs),
+        "unix_server": lambda **kwargs: create_unix_server_sock(UNUSED_UNIX_SOCKET_PATH, **kwargs),
     }
     CLIENT_FACTORIES: Final[Dict[str, CreateSocket]] = {
         "tcp_client": lambda **kwargs: create_tcp_client_sock("127.0.0.1", 8888, **kwargs),
-        "unix_client": lambda **kwargs: create_unix_client_sock("/unused", **kwargs),
+        "unix_client": lambda **kwargs: create_unix_client_sock(UNUSED_UNIX_SOCKET_PATH, **kwargs),
     }
     ALL_FACTORIES: Final[Dict[str, CreateSocket]] = {**SERVER_FACTORIES, **CLIENT_FACTORIES}
 
@@ -690,7 +692,7 @@ class TestSocketWaitReadable:
 
 class TestUnixSocket:
     @patch("socket.socket")
-    def test_unix_client_server_is_busy(self, mock_socket_class: MagicMock, unix_socket_path: str) -> None:
+    def test_unix_client_server_is_busy(self, mock_socket_class: MagicMock, unix_socket_path: Path) -> None:
         # The listen queue of the server is full.
         mock_socket = mock_socket_class.return_value
         mock_socket.connect.side_effect = OSError(errno.EAGAIN, "Try again.")
@@ -700,28 +702,28 @@ class TestUnixSocket:
 
         mock_socket.close.assert_called_once()
 
-    def test_unix_client_without_socket_file(self, unix_socket_path: str) -> None:
+    def test_unix_client_without_socket_file(self, unix_socket_path: Path) -> None:
         with pytest.raises(SocketNotListeningError):
             create_unix_client_sock(unix_socket_path)
 
-    def test_unix_client_with_stale_socket_file(self, unix_socket_path: str) -> None:
+    def test_unix_client_with_stale_socket_file(self, unix_socket_path: Path) -> None:
         create_unix_server_sock(unix_socket_path).close()
-        assert Path(unix_socket_path).exists()
+        assert unix_socket_path.exists()
         with pytest.raises(SocketNotListeningError):
             create_unix_client_sock(unix_socket_path)
 
-    def test_create_unix_server_socket_bind_fail_with_existing_instance(self, unix_socket_path: str) -> None:
+    def test_create_unix_server_socket_bind_fail_with_existing_instance(self, unix_socket_path: Path) -> None:
         with create_unix_server_sock(unix_socket_path), \
                 pytest.raises(SocketError, match="Failed to bind UNIX server sock."):
             create_unix_server_sock(unix_socket_path)
 
 class TestUnixSocketAddress:
-    def test_unix_server_address_is_path(self, unix_socket_path: str) -> None:
+    def test_unix_server_address_is_path(self, unix_socket_path: Path) -> None:
         with create_unix_server_sock(unix_socket_path) as unix_server:
-            assert get_socket_address(unix_server) == unix_socket_path
+            assert get_socket_address(unix_server) == str(unix_socket_path)
             assert get_socket_port(unix_server) is None
 
-    def test_unnamed_unix_client_has_no_address(self, unix_socket_path: str) -> None:
+    def test_unnamed_unix_client_has_no_address(self, unix_socket_path: Path) -> None:
         with create_unix_server_sock(unix_socket_path), \
                 create_unix_client_sock(unix_socket_path, timeout=1.0) as unix_client:
             assert get_socket_address(unix_client) is None
@@ -734,7 +736,7 @@ class TestUnixSocketAddress:
                 assert get_socket_address(sock) is None
                 assert get_socket_port(sock) is None
 
-    def test_closed_unix_socket(self, unix_socket_path: str) -> None:
+    def test_closed_unix_socket(self, unix_socket_path: Path) -> None:
         server_socket = create_unix_server_sock(unix_socket_path)
         server_socket.close()
         assert get_socket_address(server_socket) is None

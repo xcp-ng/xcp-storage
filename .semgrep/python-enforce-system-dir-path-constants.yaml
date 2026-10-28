@@ -1,0 +1,28 @@
+rules:
+  - id: python-enforce-system-dir-path-constants
+    languages: [python]
+    severity: WARNING
+    message: "System directory path must use `XXX_DIR_PATH` constants of `xcp_storage.config.platform`."
+    # Report the literal only, not each use of a variable that holds it.
+    options:
+      constant_propagation: false
+    patterns:
+      - pattern-either:
+          # Plain string: `"/proc/..."`, `Path("/run")`.
+          - patterns:
+              - pattern: '"$STRING"'
+              # Semgrep also sees the text fragments of an f-string as strings, so:
+              # in `f"{base}/proc/{pid}"`, `"/proc/"` is not an absolute path.
+              - pattern-not-inside: 'f"..."'
+              - metavariable-regex:
+                  metavariable: $STRING
+                  regex: '^/(?:proc|run)(?:/|$)'
+          # F-string starting with the directory: `f"/proc/{pid}/cmdline"`. Its text can't be bound to a
+          # metavariable, so the source is matched: the prefix (`f`, `F`, `rf`, `fr`...), the directory right
+          # after the opening quote, then `/`, `{` or the closing quote (not `/process`).
+          - patterns:
+              - pattern: 'f"..."'
+              - pattern-regex: '\b(?i:r?fr?)["'']/(?:proc|run)(?:/|\{|["''])'
+      # The definitions themselves.
+      - pattern-not-inside: 'PROC_DIR_PATH: Final = Path("/proc")'
+      - pattern-not-inside: 'RUNTIME_DIR_PATH: Final = Path("/run")'
