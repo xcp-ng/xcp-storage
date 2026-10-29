@@ -12,7 +12,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-import datetime
+import datetime as dt
 import ipaddress
 from pathlib import Path
 import ssl
@@ -48,8 +48,8 @@ def tls_contexts(tmp_path: Path) -> TlsContexts:
 
     key = ec.generate_private_key(ec.SECP256R1())
     name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "localhost")])
-    now = datetime.datetime.now(datetime.timezone.utc)
-    delta = datetime.timedelta(days=1)
+    now = dt.datetime.now(dt.timezone.utc)
+    delta = dt.timedelta(days=1)
     cert = (
         x509.CertificateBuilder()
         .subject_name(name)

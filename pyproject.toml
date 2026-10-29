@@ -237,6 +237,7 @@ banned-from = [
 
 [tool.ruff.lint.flake8-import-conventions.extend-aliases]
 # Modules that are always imported with `import X as Y`.
+"datetime" = "dt" # Required to deal with ICN001.
 "xcp_storage.log" = "log"
 "xcp_storage.rpc.api" = "api"
 "xcp_storage.rpc.modules.drbd" = "drbd"
