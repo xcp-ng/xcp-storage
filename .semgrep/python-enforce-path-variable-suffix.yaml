@@ -2,25 +2,35 @@ rules:
   - id: python-enforce-path-variable-suffix
     languages: [python]
     severity: WARNING
-    message: "Path variable `$VAR` must be named `path` or end with `_path`."
+    message: "Path variable `$VARIABLE` must be named `path` or end with `_path`."
     patterns:
       - pattern-either:
+          # Assigned a path object: `x = Path(...)`, `x = Path(...) / "y"`.
           - patterns:
               - pattern-either:
-                  - pattern: "$VAR = $CLASS(...)"
-                  - pattern: "$VAR = $CLASS(...) / ..."
-                  - pattern: "self.$VAR = $CLASS(...)"
-                  - pattern: "self.$VAR = $CLASS(...) / ..."
+                  - pattern: "$VARIABLE = $CLASS(...)"
+                  - pattern: "self.$VARIABLE = $CLASS(...)"
+                  - pattern: "$VARIABLE = $CLASS(...) / ..."
+                  - pattern: "self.$VARIABLE = $CLASS(...) / ..."
               - metavariable-regex:
                   metavariable: $CLASS
-                  regex: '^(Pure)?(Posix|Windows)?Path$'
+                  regex: '^(?:Pure)?(?:Posix|Windows)?Path$'
+          # Derived from a path variable: `x = base_path / "y"`.
           - patterns:
               - pattern-either:
-                  - pattern: "$VAR: $TYPE"
-                  - pattern: "$VAR: $TYPE = ..."
-                  - pattern: "self.$VAR: $TYPE = ..."
+                  - pattern: "$VARIABLE = $BASE / ..."
+                  - pattern: "self.$VARIABLE = $BASE / ..."
+              - metavariable-regex:
+                  metavariable: $BASE
+                  regex: '^(?i:(?:[\w.]*[._])?path)$'
+          # Declared as a path: `x: Optional[Path]`, `x: StrPath`.
+          - patterns:
+              - pattern-either:
+                  - pattern: "$VARIABLE: $TYPE"
+                  - pattern: "$VARIABLE: $TYPE = ..."
+                  - pattern: "self.$VARIABLE: $TYPE = ..."
                   - pattern: |
-                      def $FUNCTION(..., $VAR: $TYPE, ...):
+                      def $FUNCTION(..., $VARIABLE: $TYPE, ...):
                           ...
               - metavariable-regex:
                   metavariable: $TYPE
@@ -28,17 +38,20 @@ rules:
                     (?x)
                     (?(DEFINE)
                         (?<PATH_TYPE>
-                            (?:Pure)?(?:Posix|Windows)?Path
+                            (?:Pure)?(?:Posix|Windows)?Path | StrPath
                         )
                     )
                     ^(?:
                         (?&PATH_TYPE)
                       | Optional\[\s*(?&PATH_TYPE)\s*\]
-                      | Union\[.*\b(?&PATH_TYPE)\b.*\]
+                      | Final\[\s*(?&PATH_TYPE)\s*\]
+                      | Union\[.*\b(?&PATH_TYPE)(?!\w).*\]
                       | (?&PATH_TYPE)\s*\|\s*None
                       | None\s*\|\s*(?&PATH_TYPE)
                     )$
-      - focus-metavariable: $VAR
+      - focus-metavariable: $VARIABLE
+      # Second lookahead: `_?EXEC_PATH_*` names are skipped.
+      # They must hold a `str`, see: `python-enforce-exec-path-variable-type`.
       - metavariable-regex:
-          metavariable: $VAR
-          regex: '^(?!(?i:(?:.*_)?path)$)\w+$'
+          metavariable: $VARIABLE
+          regex: '^(?!(?i:(?:\w*_)?path)$)(?!_?EXEC_PATH_)\w+$'

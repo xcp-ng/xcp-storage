@@ -6,7 +6,7 @@ rules:
     patterns:
       - pattern: |
           class $CLASS(...):
-            ...
+              ...
       - metavariable-regex:
           metavariable: $CLASS
-          regex: '^(?!_?([A-Z][a-z0-9]+)+$)'
+          regex: '^(?!_?(?:[A-Z][a-z0-9]+)+$)'

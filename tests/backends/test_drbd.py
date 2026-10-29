@@ -21,10 +21,13 @@ from unittest.mock import (
 import pytest
 
 from xcp_storage.backends.drbd import (
+    _DRBD_DEBUG_RESOURCES_PATH,
     _DRBDSETUP_TIMEOUT,
     _EXEC_PATH_DRBDSETUP,
     _get_drbd_status,
     Drbd,
+    DRBD_BY_RES_PATH,
+    DRBD_BY_RES_PREFIX,
     DrbdOpener,
 )
 import xcp_storage.log as log
@@ -34,48 +37,52 @@ from xcp_storage.typing import (
     Dict,
     Final,
     List,
+    StrPath,
 )
 
 # ==============================================================================
 
 @pytest.mark.parametrize("resource_name, volume_number, expected_path", [
-    ("volume", 0, "/dev/drbd/by-res/volume/0"),
-    ("res-1", 2, "/dev/drbd/by-res/res-1/2"),
-    ("volume-2", 67, "/dev/drbd/by-res/volume-2/67")
+    ("volume", 0, DRBD_BY_RES_PATH / "volume" / "0"),
+    ("res-1", 2, DRBD_BY_RES_PATH / "res-1" / "2"),
+    ("volume-2", 67, DRBD_BY_RES_PATH / "volume-2" / "67")
 ])
-def test_build_drbd_path(resource_name: str, volume_number: int, expected_path: str) -> None:
+def test_build_drbd_path(resource_name: str, volume_number: int, expected_path: Path) -> None:
     assert Drbd.build_path(resource_name, volume_number) == expected_path
 
 # ------------------------------------------------------------------------------
 
 @pytest.mark.parametrize("path, expected_name", [
-    ("/dev/drbd/by-res/xcp-volume-1/0", "xcp-volume-1"),
+    (f"{DRBD_BY_RES_PREFIX}xcp-volume-1/0", "xcp-volume-1"),
     ("../xcp-volume-2/1", "xcp-volume-2"),
-    ("/dev/drbd/by-res/res-1/12", "res-1"),
-    ("/dev/drbd/by-res/xcp-volume-1/0/extra", ""),
-    ("/dev/drbd/by-res/a/b/c", ""),
+    (f"{DRBD_BY_RES_PREFIX}res-1/12", "res-1"),
+    (f"{DRBD_BY_RES_PREFIX}xcp-volume-1/0/extra", ""),
+    (f"{DRBD_BY_RES_PREFIX}a/b/c", ""),
     ("../a/b/c", ""),
-    ("/dev/drbd/by-res/a/", ""),
+    (f"{DRBD_BY_RES_PREFIX}a/", ""),
     ("../a/", ""),
-    ("/dev/drbd/by-res/a/x", ""),
-    ("/dev/drbd/by-res/a/-1", ""),
-    ("/dev/drbd/by-res/a/0/", ""),
+    (f"{DRBD_BY_RES_PREFIX}a/x", ""),
+    (f"{DRBD_BY_RES_PREFIX}a/-1", ""),
+    (f"{DRBD_BY_RES_PREFIX}a/0/", ""),
     ("../a/0/", ""),
     ("/invalid/path/format", ""),
-    ("/dev/drbd/by-res/missing-volume-number", ""),
+    (f"{DRBD_BY_RES_PATH}x/0", ""),
+    (f"{DRBD_BY_RES_PREFIX}missing-volume-number", ""),
     ("../missing-volume-number", ""),
     ("", ""),
-    ("/dev/drbd/by-res//0", ""),
+    (f"{DRBD_BY_RES_PREFIX}/0", ""),
     ("..//0", ""),
-    ("/dev/drbd/by-res/../0", ""),
+    (f"{DRBD_BY_RES_PREFIX}../0", ""),
     ("../../x/0", ""),
     ("../../../x/0", ""),
     ("../../", ""),
-    ("/dev/drbd/by-res/-x/0", ""),
-    ("/dev/drbd/by-res/.ext/0", ""),
-    ("/dev/drbd/by-res/a b/0", "")
+    (f"{DRBD_BY_RES_PREFIX}-x/0", ""),
+    (f"{DRBD_BY_RES_PREFIX}.ext/0", ""),
+    (f"{DRBD_BY_RES_PREFIX}a b/0", ""),
+    (Drbd.build_path("res-1", 2), "res-1"),
+    (Path("../xcp-volume-2/1"), "xcp-volume-2")
 ])
-def test_get_drbd_name_from_path(path: str, expected_name: str) -> None:
+def test_get_drbd_name_from_path(path: StrPath, expected_name: str) -> None:
     assert Drbd.get_name_from_path(path) == expected_name
 
 # ------------------------------------------------------------------------------
@@ -231,11 +238,11 @@ class TestGetDrbdLocalOpeners:
     def test_file_not_found(
         self, mock_read_text: MagicMock, caplog: pytest.LogCaptureFixture
     ) -> None:
-        openers_path = "/sys/kernel/debug/drbd/resources/res-test/volumes/0/openers"
+        openers_path = _DRBD_DEBUG_RESOURCES_PATH / "res-test" / "volumes" / "0" / "openers"
         mock_read_text.side_effect = FileNotFoundError(
             2,
             "No such file or directory",
-            openers_path
+            str(openers_path)
         )
         with caplog.at_level(log.INFO):
             assert Drbd.get_local_openers("res-test", 0) == []

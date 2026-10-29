@@ -2,23 +2,25 @@ rules:
   - id: python-enforce-error-variable-suffix
     languages: [python]
     severity: WARNING
-    message: "Error variable `$VAR` must be named `error` or end with `_error`."
+    message: "Error variable `$VARIABLE` must be named `error` or end with `_error`."
     patterns:
       - pattern-either:
+          # Assigned an error: `x = OSError(...)`.
           - patterns:
               - pattern-either:
-                  - pattern: "$VAR = $CLASS(...)"
-                  - pattern: "self.$VAR = $CLASS(...)"
+                  - pattern: "$VARIABLE = $CLASS(...)"
+                  - pattern: "self.$VARIABLE = $CLASS(...)"
               - metavariable-regex:
                   metavariable: $CLASS
                   regex: '^(?:\w+\.)*\w*Error$'
+          # Declared as an error: `x: Optional[OSError]`.
           - patterns:
               - pattern-either:
-                  - pattern: "$VAR: $TYPE"
-                  - pattern: "$VAR: $TYPE = ..."
-                  - pattern: "self.$VAR: $TYPE = ..."
+                  - pattern: "$VARIABLE: $TYPE"
+                  - pattern: "$VARIABLE: $TYPE = ..."
+                  - pattern: "self.$VARIABLE: $TYPE = ..."
                   - pattern: |
-                      def $FUNCTION(..., $VAR: $TYPE, ...):
+                      def $FUNCTION(..., $VARIABLE: $TYPE, ...):
                           ...
               - metavariable-regex:
                   metavariable: $TYPE
@@ -32,11 +34,12 @@ rules:
                     ^(?:
                         (?&ERROR_TYPE)
                       | Optional\[\s*(?&ERROR_TYPE)\s*\]
-                      | Union\[.*\b(?&ERROR_TYPE)\b.*\]
+                      | Final\[\s*(?&ERROR_TYPE)\s*\]
+                      | Union\[.*\b(?&ERROR_TYPE)(?!\w).*\]
                       | (?&ERROR_TYPE)\s*\|\s*None
                       | None\s*\|\s*(?&ERROR_TYPE)
                     )$
-      - focus-metavariable: $VAR
+      - focus-metavariable: $VARIABLE
       - metavariable-regex:
-          metavariable: $VAR
-          regex: '^(?!(?i:(?:.*_)?error)$)\w+$'
+          metavariable: $VARIABLE
+          regex: '^(?!(?i:(?:\w*_)?error)$)\w+$'

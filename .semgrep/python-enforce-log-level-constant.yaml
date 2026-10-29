@@ -8,11 +8,11 @@ rules:
         - tests/
     patterns:
       - pattern-either:
-          - pattern: $OBJECT.at_level($LEVEL, ...)
-          - pattern: $OBJECT.at_level(..., level=$LEVEL, ...)
-          - pattern: $OBJECT.set_level($LEVEL, ...)
-          - pattern: $OBJECT.set_level(..., level=$LEVEL, ...)
-          - pattern: $OBJECT.setLevel($LEVEL)
+          - pattern: "$OBJECT.at_level($LEVEL, ...)"
+          - pattern: "$OBJECT.at_level(..., level=$LEVEL, ...)"
+          - pattern: "$OBJECT.set_level($LEVEL, ...)"
+          - pattern: "$OBJECT.set_level(..., level=$LEVEL, ...)"
+          - pattern: "$OBJECT.setLevel($LEVEL)"
       - metavariable-regex:
           metavariable: $LEVEL
-          regex: '^["''](DEBUG|INFO|WARNING|ERROR|CRITICAL)["'']$'
+          regex: '^["''](?:DEBUG|INFO|WARNING|ERROR|CRITICAL)["'']$'

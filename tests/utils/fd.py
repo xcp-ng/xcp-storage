@@ -14,16 +14,24 @@
 
 import contextlib
 import os
-from pathlib import Path
+from pathlib import PurePath
+
+from xcp_storage.config.platform import PROC_DIR_PATH
+
+from xcp_storage.typing import Final
 
 # ==============================================================================
 
-def count_open_fds(path: Path) -> int:
+_FD_SELF_DIR_PATH: Final = PROC_DIR_PATH / "self" / "fd"
+
+# ------------------------------------------------------------------------------
+
+def count_open_fds(path: PurePath) -> int:
     """
     Return the number of descriptors of this process opened on `path`.
     """
     count = 0
-    for fd_path in Path("/proc/self/fd").iterdir():
+    for fd_path in _FD_SELF_DIR_PATH.iterdir():
         with contextlib.suppress(OSError):
             count += os.readlink(fd_path) == str(path)
     return count

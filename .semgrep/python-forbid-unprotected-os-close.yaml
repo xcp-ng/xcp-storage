@@ -4,7 +4,7 @@ rules:
     severity: WARNING
     message: "`os.close` can raise `OSError`: use `close_fd` instead or catch the exception."
     patterns:
-      - pattern: os.close(...)
+      - pattern: "os.close(...)"
       - pattern-not-inside: |
           try:
               ...
@@ -13,7 +13,7 @@ rules:
       - pattern-not-inside: |
           try:
               ...
-          except OSError as $E:
+          except OSError as $EXCEPTION:
               ...
       - pattern-not-inside: |
           with contextlib.suppress(...):

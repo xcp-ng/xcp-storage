@@ -7,5 +7,5 @@ rules:
       exclude:
         - src/xcp_storage/typing/
     pattern-either:
-      - pattern: import typing
-      - pattern: import typing_extensions
+      - pattern: "import typing"
+      - pattern: "import typing_extensions"

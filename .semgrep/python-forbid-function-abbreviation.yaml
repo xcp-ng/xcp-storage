@@ -6,8 +6,8 @@ rules:
     patterns:
       - pattern-either:
           - pattern: "$NAME = ..."
-          - pattern: "$NAME: $TYPE"
           - pattern: "self.$NAME = ..."
+          - pattern: "$NAME: $TYPE"
           - pattern: |
               class $NAME(...):
                   ...

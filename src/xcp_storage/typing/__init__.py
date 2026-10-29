@@ -13,6 +13,7 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 import contextlib
+from pathlib import PurePath
 import typing
 from typing import *  # noqa: F403
 
@@ -72,6 +73,11 @@ if not TYPE_CHECKING:  # noqa: F405
         _T = TypeVar("_T")  # noqa: F405
         def assert_type(value: _T, expected_type: Type[_T]) -> None:  # noqa: F405
             pass
+
+# ------------------------------------------------------------------------------
+
+# A path given to a function that only passes it to an OS API (`open`, `bind`...) as a string.
+StrPath = Union[str, PurePath]  # noqa: F405
 
 # ------------------------------------------------------------------------------
 
