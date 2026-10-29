@@ -18,9 +18,13 @@ dev = [
     "mypy>=1.4.1",
     "pyrefly>=0.14.0",
     "pytest>=7.4.4",
+    "pytest-cov>=4.1.0",
     "ruff>=0.15.6",
     "semgrep>=1.46.0",
 ]
+
+[tool.coverage.run]
+source = ["src"]
 
 [tool.mypy]
 python_version = "3.14"
@@ -233,6 +237,7 @@ banned-from = [
 
 [tool.ruff.lint.flake8-import-conventions.extend-aliases]
 # Modules that are always imported with `import X as Y`.
+"datetime" = "dt" # Required to deal with ICN001.
 "xcp_storage.log" = "log"
 "xcp_storage.rpc.api" = "api"
 "xcp_storage.rpc.modules.drbd" = "drbd"
