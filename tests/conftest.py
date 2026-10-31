@@ -29,6 +29,9 @@ PROJECT_PATH: Final = Path(__file__).parents[1]
 # reused and never cleaned by the tests.
 PROJECT_BUILD_PATH: Final = PROJECT_PATH / "build"
 
+# Directory of the daemons in the sources.
+PROJECT_DAEMONS_DIR_PATH: Final = PROJECT_PATH / "daemons"
+
 # Nothing is installed on the system by the tests, but the configuration must not
 # depend on system paths: the install directories are inside the build directory.
 _PROJECT_INSTALL_PATH: Final = PROJECT_BUILD_PATH / "install"

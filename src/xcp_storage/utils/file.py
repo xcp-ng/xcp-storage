@@ -15,7 +15,14 @@
 import contextlib
 import os
 
+from xcp_storage.typing import Final
+
 # ==============================================================================
+
+# `select` only supports the descriptors below this value.
+FD_SETSIZE: Final = 1024
+
+# ------------------------------------------------------------------------------
 
 def close_fd(fd: int) -> None:
     """

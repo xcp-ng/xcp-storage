@@ -46,6 +46,10 @@ def escape_service_instance(service_instance: str) -> str:
     # A quick reminder: An instance is the right part of a service after `@`.
     return service_instance.replace("-", "\\x2d")
 
+def unescape_service_instance(escaped_service_instance: str) -> str:
+    # Reverse of `escape_service_instance`.
+    return escaped_service_instance.replace("\\x2d", "-")
+
 # ------------------------------------------------------------------------------
 
 def is_service_active(service_name: str) -> bool:

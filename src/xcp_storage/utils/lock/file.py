@@ -50,6 +50,10 @@ class FileLock(HandleLock):
       would use a new inode, which could have bad consequences...
     - The parent directory must exist. A local file system is required (`flock` is not reliable
       on every network file system).
+    - The waiters are not queued: the lock goes to whoever asks while it is free, so a waiter can starve.
+      For example, a writer of `ReadWriteFileLock` waits as long as readers hold the lock without interruption.
+      With a timeout it is worse, the wait polls with a timer and can miss every moment the lock
+      is free. Use `FifoLock` when the requests must be served in arrival order.
     """
 
     def __init__(
@@ -64,7 +68,7 @@ class FileLock(HandleLock):
 
         lock_path = str(path)
         if not lock_path:
-            raise ValueError(f"Invalid lock path `{lock_path}`.")
+            raise ValueError(f"Invalid lock path: `{lock_path}`.")
 
         super().__init__(
             lock_path,
