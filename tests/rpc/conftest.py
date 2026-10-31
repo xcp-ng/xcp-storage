@@ -25,12 +25,12 @@ from tests.network.tls import (  # noqa: F401
 )
 from xcp_storage.rpc.client import RpcApiClient
 from xcp_storage.rpc.server import RpcApiServer
+from xcp_storage.utils.contextlib import scoped_factory
 
 from xcp_storage.typing import (
     Callable,
     Final,
     Generator,
-    List,
     Optional,
 )
 
@@ -69,21 +69,15 @@ def rpc_client_factory(
     rpc_server: RpcApiServer,
     client_ssl_context: Optional[ssl.SSLContext] # noqa: F811
 ) -> Generator[RpcClientFactory, None, None]:
-    rpc_clients: List[RpcApiClient] = []
-
-    def factory(*, client_timeout: float = CLIENT_TIMEOUT) -> RpcApiClient:
-        rpc_client = RpcApiClient(
+    def create(*, client_timeout: float = CLIENT_TIMEOUT) -> RpcApiClient:
+        return RpcApiClient(
             rpc_server.address,
             rpc_server.port,
             ssl_context=client_ssl_context,
             client_timeout=client_timeout
         )
-        rpc_clients.append(rpc_client)
-        return rpc_client
-
-    yield factory
 
     # Do not rely on the garbage collector: a test can keep a client alive (e.g. through a mock that wraps
     # one of its methods), and its socket would stay open after the test.
-    for rpc_client in rpc_clients:
-        rpc_client.disconnect()
+    with scoped_factory(create, RpcApiClient.disconnect) as factory:
+        yield factory
