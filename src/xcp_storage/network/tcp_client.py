@@ -14,7 +14,6 @@
 
 import contextlib
 import ssl
-import time
 from types import TracebackType
 
 from xcp_storage.network.socket import (
@@ -24,6 +23,7 @@ from xcp_storage.network.socket import (
     SocketDisconnectedError,
 )
 from xcp_storage.utils.sync import wait_for_condition
+from xcp_storage.utils.time import Timer
 
 from xcp_storage.typing import (
     Final,
@@ -100,7 +100,7 @@ class TcpClient(contextlib.AbstractContextManager):
             # If the `connect` timeout is not set, we use the client one.
             timeout = self._client_timeout
 
-        start_time = time.monotonic()
+        timer = Timer(timeout)
         exception: Optional[Exception] = None
         def connect_impl() -> bool:
             nonlocal exception
@@ -109,7 +109,7 @@ class TcpClient(contextlib.AbstractContextManager):
             if connect_timeout > 0:
                 # Use a minimal timeout; if a value of 0 is used, the socket creation may remain blocked
                 # for an extended period.
-                connect_timeout = max(connect_timeout - (time.monotonic() - start_time), _MIN_CONNECT_TIMEOUT)
+                connect_timeout = max(timer.remaining_time, _MIN_CONNECT_TIMEOUT)
 
             try:
                 client_socket = Socket(create_tcp_client_sock(

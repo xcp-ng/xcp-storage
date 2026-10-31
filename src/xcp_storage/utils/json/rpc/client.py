@@ -14,7 +14,6 @@
 
 import contextlib
 import ssl
-import time
 from types import TracebackType
 
 import xcp_storage.log as log
@@ -29,6 +28,7 @@ from xcp_storage.utils.json.rpc import (
     JsonRpcResponseError,
     JsonValue,
 )
+from xcp_storage.utils.time import Timer
 
 from xcp_storage.typing import (
     Final,
@@ -161,17 +161,12 @@ class JsonRpcClient(contextlib.AbstractContextManager):
         the server is raised as is.
         """
 
-        remaining_time = timeout
-        start_time = time.monotonic()
-
+        timer = Timer(timeout)
         while True:
             try:
-                return self._call(remaining_time, method, params)
+                return self._call(timer.remaining_time, method, params)
             except SocketDisconnectedError: # noqa: PERF203
-                if not retry_on_disconnect:
-                    raise
-                remaining_time = timeout - (time.monotonic() - start_time)
-                if remaining_time <= 0:
+                if not retry_on_disconnect or timer.has_expired():
                     raise
 
     def _call(

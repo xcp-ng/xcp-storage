@@ -35,6 +35,7 @@ from xcp_storage.utils.lock import (
     ReadWriteHandleLock,
 )
 from xcp_storage.utils.service import escape_service_instance, ServiceError, start_service
+from xcp_storage.utils.time import Timer
 
 from xcp_storage.typing import (
     Final,
@@ -150,17 +151,17 @@ class FifoLock(HandleLock):
 
         if timeout is not None:
             timeout = max(timeout, _MIN_ACQUIRE_TIMEOUT)
-        deadline = None if timeout is None else time.monotonic() + timeout
+        timer = None if timeout is None else Timer(timeout)
 
         self._tracer.start_acquire()
         for attempt in range(1, _MAX_CONNECTION_ATTEMPTS + 1):
             try:
-                self._socket = self._try_server_lock(shared=shared, deadline=deadline)
+                self._socket = self._try_server_lock(shared=shared, timer=timer)
                 break
             except SocketDisconnectedError as e:
                 # Never try again after the deadline: the caller has waited long enough.
                 if (attempt == _MAX_CONNECTION_ATTEMPTS or (
-                    deadline is not None and time.monotonic() >= deadline
+                    timer is not None and timer.has_expired()
                 )):
                     raise LockError(f"Lost connection with lock server `{self._name}`.") from e
                 logger.warning("Lost connection with lock server `%s`, trying again.", self._name)
@@ -173,8 +174,8 @@ class FifoLock(HandleLock):
             return True
         return False
 
-    def _try_server_lock(self, *, shared: bool, deadline: Optional[float]) -> Optional[Socket]:
-        socket = self._connect(deadline)
+    def _try_server_lock(self, *, shared: bool, timer: Optional[Timer]) -> Optional[Socket]:
+        socket = self._connect(timer)
         if socket is None:
             return None
 
@@ -182,7 +183,7 @@ class FifoLock(HandleLock):
         try:
             socket.send(_LOCK_MODE_SHARED if shared else _LOCK_MODE_EXCLUSIVE)
 
-            timeout = None if deadline is None else max(deadline - time.monotonic(), 0.0)
+            timeout = None if timer is None else timer.remaining_time
             if not socket.wait_readable(timeout=timeout):
                 return None
 
@@ -197,11 +198,11 @@ class FifoLock(HandleLock):
             if not acquired:
                 socket.close()
 
-    def _connect(self, deadline: Optional[float]) -> Optional[Socket]:
+    def _connect(self, timer: Optional[Timer]) -> Optional[Socket]:
         service_name = self.get_service_name(self._name)
-        service_start_deadline: Optional[float] = None
+        service_start_timer: Optional[Timer] = None
         while True:
-            timeout = None if deadline is None else max(deadline - time.monotonic(), _MIN_CONNECT_TIMEOUT)
+            timeout = None if timer is None else max(timer.remaining_time, _MIN_CONNECT_TIMEOUT)
 
             try:
                 socket = Socket(create_unix_client_sock(self._path, timeout=timeout))
@@ -210,10 +211,10 @@ class FifoLock(HandleLock):
             except SocketTimeoutError:
                 return None
             except SocketNotListeningError as e:
-                if service_start_deadline is None:
+                if service_start_timer is None:
                     self._start_service(service_name)
-                    service_start_deadline = time.monotonic() + _SERVICE_START_TIMEOUT
-                elif time.monotonic() >= service_start_deadline:
+                    service_start_timer = Timer(_SERVICE_START_TIMEOUT)
+                elif service_start_timer.has_expired():
                     raise LockError(f"Lock server `{self._name}` is not reachable.") from e
             except SocketBusyError:
                 # The queue of connections of the daemon is full: wait for a free place, like a queued request.
@@ -221,7 +222,7 @@ class FifoLock(HandleLock):
             except SocketError as e:
                 raise LockError(f"Unable to connect to lock server `{self._name}`.") from e
 
-            if deadline is not None and time.monotonic() >= deadline:
+            if timer is not None and timer.has_expired():
                 return None
             time.sleep(_SERVICE_START_POLL_INTERVAL)
 

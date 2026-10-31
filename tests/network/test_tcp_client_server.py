@@ -32,6 +32,7 @@ from xcp_storage.network.socket import (
 )
 from xcp_storage.network.tcp_client import TcpClient, TcpClientError
 from xcp_storage.network.tcp_server import TcpServer, TcpServerError
+from xcp_storage.utils.time import Clock
 
 from xcp_storage.typing import (
     Callable,
@@ -234,25 +235,24 @@ class TestTcpClient:
     def test_connect_timeout_failure(self) -> None:
         client_timeout = 0.5
         tcp_client = TcpClient("127.0.0.1", port=0, client_timeout=client_timeout)
-        start_time = time.monotonic()
+        clock = Clock()
 
         with pytest.raises(TcpClientError, match="Unable to connect to server."):
             tcp_client.connect()
 
-        elapsed_time = time.monotonic() - start_time
+        elapsed_time = clock.elapsed_time
         assert elapsed_time >= client_timeout
         assert elapsed_time < 1.0
         assert not tcp_client.socket
 
     def test_connect_zero_timeout(self) -> None:
         tcp_client = TcpClient("127.0.0.1", port=0, client_timeout=CLIENT_TIMEOUT)
-        start_time = time.monotonic()
+        clock = Clock()
 
         with pytest.raises(TcpClientError, match="Unable to connect to server."):
             tcp_client.connect(timeout=0.0)
 
-        elapsed_time = time.monotonic() - start_time
-        assert elapsed_time < 1.0
+        assert clock.elapsed_time < 1.0
         assert not tcp_client.socket
 
     @pytest.mark.parametrize("tcp_server", [EchoServer], indirect=True)
@@ -306,10 +306,10 @@ class TestTcpClient:
             client_timeout=CLIENT_TIMEOUT
         )
         # A certificate error is not transient: connect must fail at once instead of retrying until the timeout.
-        start_time = time.monotonic()
+        clock = Clock()
         with pytest.raises(TcpClientError, match="Unable to connect to server."):
             tcp_client.connect(timeout=30.0)
-        assert time.monotonic() - start_time < CLIENT_TIMEOUT
+        assert clock.elapsed_time < CLIENT_TIMEOUT
         assert not tcp_client.connected
 
     @pytest.mark.parametrize("tcp_server", [EchoServer], indirect=True)
@@ -350,9 +350,9 @@ class TestTcpServer:
                 tcp_server.run()
 
         # The failure must be reported at once, not once the wait timeout is reached.
-        start_time = time.monotonic()
+        clock = Clock()
         assert not tcp_server.wait_for_startup(timeout=SERVER_STARTUP_TIMEOUT)
-        assert time.monotonic() - start_time < SERVER_STARTUP_TIMEOUT / 2
+        assert clock.elapsed_time < SERVER_STARTUP_TIMEOUT / 2
         tcp_server.wait_for_shutdown()
 
     def test_wait_for_startup_after_stop(self) -> None:
@@ -452,9 +452,9 @@ class TestTcpClientServer:
         assert tcp_client.socket.wait_readable(timeout=2.0)
 
         # With TLS, the server only closes the TCP connection after the shutdown timeout.
-        deadline = time.monotonic() + TLS_SHUTDOWN_TIMEOUT + 1.0
+        clock = Clock()
         with pytest.raises(SocketDisconnectedError, match="Unable to send data."):
-            while time.monotonic() < deadline:
+            while clock.elapsed_time < TLS_SHUTDOWN_TIMEOUT + 1.0:
                 tcp_client.send(b"Moshimoshi?")
 
         with pytest.raises(TcpClientError, match="Cannot send. Not connected."):
@@ -555,13 +555,12 @@ class TestTcpServerClientLimits:
     @pytest.mark.parametrize("tcp_server", [partial(HangingConnectServer, client_connect_timeout=0.5)], indirect=True)
     def test_client_connect_timeout(self, tcp_client_factory: TcpClientFactory) -> None:
         with tcp_client_factory() as tcp_client:
-            start_time = time.monotonic()
+            clock = Clock()
 
             with pytest.raises(SocketDisconnectedError):
                 tcp_client.receive(bytearray(1))
 
-            elapsed_time = time.monotonic() - start_time
-            assert elapsed_time < 1.0
+            assert clock.elapsed_time < 1.0
             assert not tcp_client.socket
 
     @pytest.mark.parametrize("tcp_server", [partial(EchoServer, max_clients=1)], indirect=True)
