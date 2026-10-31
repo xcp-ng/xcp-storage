@@ -39,7 +39,6 @@ from xcp_storage.typing import (
     Callable,
     cast,
     Final,
-    Generator,
     Iterator,
     Optional,
     override,
@@ -60,7 +59,7 @@ TLS_SHUTDOWN_TIMEOUT: Final = 0.2
 # ------------------------------------------------------------------------------
 
 @contextlib.contextmanager
-def run_threaded_server(tcp_server: TcpServer) -> Generator[TcpServer, None, None]:
+def run_threaded_server(tcp_server: TcpServer) -> Iterator[TcpServer]:
     with create_thread_group(join_timeout=SERVER_THREAD_SHUTDOWN_TIMEOUT) as thread_group:
         thread_group.start(tcp_server.run)
         try:
@@ -73,7 +72,7 @@ def run_threaded_server(tcp_server: TcpServer) -> Generator[TcpServer, None, Non
 def tcp_server(
     request: pytest.FixtureRequest,
     ssl_contexts: Optional[TlsContexts]
-) -> Generator[TcpServer, None, None]:
+) -> Iterator[TcpServer]:
     server_class = request.param
     server = server_class("127.0.0.1", 0, ssl_context=ssl_contexts.server if ssl_contexts else None)
     with run_threaded_server(server) as threaded_server:
@@ -84,7 +83,7 @@ TcpClientFactory = Callable[[], TcpClient]
 @pytest.fixture
 def tcp_client_factory(
     tcp_server: TcpServer, client_ssl_context: Optional[ssl.SSLContext]
-) -> Generator[TcpClientFactory, None, None]:
+) -> Iterator[TcpClientFactory]:
     def create() -> TcpClient:
         return TcpClient(
             tcp_server.address,

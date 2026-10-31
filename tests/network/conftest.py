@@ -23,7 +23,7 @@ from tests.network.tls import (  # noqa: F401
 )
 from xcp_storage.network.socket import create_socket_pair, SocketPair
 
-from xcp_storage.typing import Final, Generator
+from xcp_storage.typing import Final, Iterator
 
 # ==============================================================================
 
@@ -38,7 +38,7 @@ def unix_socket_path(tmp_path: Path) -> Path:
     return tmp_path / "unix.sock"
 
 @pytest.fixture
-def socket_pair() -> Generator[SocketPair, None, None]:
+def socket_pair() -> Iterator[SocketPair]:
     first, second = create_socket_pair(timeout=SOCKET_PAIR_TIMEOUT)
     with first, second:
         yield first, second

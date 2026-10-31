@@ -1,0 +1,8 @@
+rules:
+  - id: python-enforce-iterator-return-type
+    languages: [python]
+    severity: WARNING
+    message: "A generator that only yields must be annotated with `Iterator[...]` (or `AsyncIterator[...]`)."
+    pattern-either:
+      - pattern: "$MODULE.Generator[$TYPE, None, None]"
+      - pattern: "$MODULE.AsyncGenerator[$TYPE, None]"
