@@ -12,12 +12,17 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+import contextlib
+import multiprocessing.process
+import os
+import signal
 import subprocess
 
 from xcp_storage.config.platform import PROC_DIR_PATH
 import xcp_storage.log as log
 
 from xcp_storage.typing import (
+    Any,
     Callable,
     List,
     Literal,
@@ -30,6 +35,69 @@ from xcp_storage.typing import (
 # ==============================================================================
 
 logger = log.get_logger() # Use default logger.
+
+# ------------------------------------------------------------------------------
+
+class ProcessError(Exception):
+    """
+    Base class of process errors.
+    """
+
+    def __init__(self, message: str) -> None:
+        super().__init__(message)
+
+class ProcessTimeoutError(ProcessError):
+    """
+    An operation (kill, ...) did not complete in time.
+    """
+
+# ------------------------------------------------------------------------------
+
+def get_process_cmdline(pid: int) -> List[str]:
+    path = PROC_DIR_PATH / str(pid) / "cmdline"
+    try:
+        return [arg.decode(errors="replace") for arg in path.read_bytes().split(b"\0") if arg]
+    except Exception as e:
+        logger.info("Unable to get command line of PID `%d`: `%s`.", pid, e)
+        return []
+
+# ------------------------------------------------------------------------------
+
+# TODO(XCPNG-3032): Remove the quotes of `subprocess.Popen[Any]` in python 3.9 (not subscriptable before).
+def kill_process(
+    process: Union[multiprocessing.process.BaseProcess, "subprocess.Popen[Any]"],
+    *,
+    timeout: Optional[float] = None
+) -> None:
+    """
+    Kill `process` with `SIGKILL` and wait for its end, do nothing if it has already ended: a reaped process is never
+    signaled, as its pid may have been reused.
+
+    `timeout` bounds the wait in seconds (`None`: no limit), because a process in uninterruptible sleep (blocked I/O)
+    does not end on `SIGKILL`.
+
+    `ProcessTimeoutError` is raised when it expires, `ProcessError` when the process
+    cannot be signaled.
+    """
+
+    try:
+        if isinstance(process, subprocess.Popen):
+            process.kill()
+            with contextlib.suppress(subprocess.TimeoutExpired):
+                process.wait(timeout)
+            has_ended = process.returncode is not None
+        else:
+            assert process.pid is not None, "The process is not started."
+            # `exitcode` reaps the process when it has ended: its pid must not be signaled anymore.
+            if process.exitcode is None:
+                os.kill(process.pid, signal.SIGKILL)
+            process.join(timeout)
+            has_ended = process.exitcode is not None
+    except OSError as e:
+        raise ProcessError(f"Unable to kill process `{process.pid}`.") from e
+
+    if not has_ended:
+        raise ProcessTimeoutError(f"Process `{process.pid}` did not end after `SIGKILL`.")
 
 # ------------------------------------------------------------------------------
 
@@ -167,13 +235,3 @@ def run_command(
         quiet=quiet,
         timeout=timeout
     )
-
-# ------------------------------------------------------------------------------
-
-def get_process_cmdline(pid: int) -> List[str]:
-    path = PROC_DIR_PATH / str(pid) / "cmdline"
-    try:
-        return [arg.decode(errors="replace") for arg in path.read_bytes().split(b"\0") if arg]
-    except Exception as e:
-        logger.info("Unable to get command line of PID `%d`: `%s`.", pid, e)
-        return []
