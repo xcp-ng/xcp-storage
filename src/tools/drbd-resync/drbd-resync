@@ -1,0 +1,403 @@
+#!/usr/bin/env python3
+
+import argparse
+import json
+import logging
+import os
+import shlex
+import subprocess
+from collections import Counter
+from functools import lru_cache
+
+from typing import Any, Dict, Iterator, List, Optional, Set, cast
+
+SCRIPT_NAME = "drbd-resync"
+XE_CMD_POOL_MASTER = "cat /etc/xensource/pool.conf"
+DRBD_CMD_STATUS = "drbdsetup status all --json"
+DRBD_CMD_VERIFY = "drbdadm verify {resource_name}:{peer}/0"
+DRBD_CMD_WAIT_SYNC = "drbdadm wait-sync {resource_name}"
+DRBD_CMD_INVALIDATE = "drbdadm invalidate {resource_name}:{peer}/0 --reset-bitmap=no"
+DRBD_CMD_INVALIDATE_REMOTE = "drbdadm invalidate-remote {resource_name}:{peer}/0 --reset-bitmap=no"
+
+logger = logging.getLogger(__name__)
+
+JSON = Dict[str, Any]
+
+
+class SingletonMeta(type):
+    _instances: Dict[type, Any] = {}
+
+    def __call__(cls, *args, **kwargs):
+        if cls not in cls._instances:
+            cls._instances[cls] = super(SingletonMeta, cls).__call__(*args, **kwargs)
+        return cls._instances[cls]
+
+
+class CommandRunner(metaclass=SingletonMeta):
+    def __init__(self, dry_run: bool = False, ssh_key: Optional[str] = None):
+        self.dry_run = dry_run
+        self.ssh_key = ssh_key
+        self.master = self.get_current_master()
+
+    def run_command(self, cmd: str, ignore_dry_run: bool = False, remote_host: str = "") -> str:
+        with_key = f" -i {shlex.quote(self.ssh_key)}" if self.ssh_key else ""
+        if remote_host:
+            cmd = f"ssh root@{shlex.quote(remote_host)}{with_key} -C {shlex.quote(cmd)}"
+        logger.debug(cmd)
+        if self.dry_run and not ignore_dry_run:
+            return ""
+        try:
+            return subprocess.run(
+                shlex.split(cmd),
+                check=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                universal_newlines=True,
+            ).stdout.strip()
+        except subprocess.CalledProcessError as e:
+            logger.error("%s failed with error code %d: `%s`", cmd, e.returncode, e.output)
+            raise
+
+    def get_current_master(self) -> str:
+        master = self.run_command(XE_CMD_POOL_MASTER, ignore_dry_run=True)
+        if "slave" not in master and "master" not in master:
+            logger.error("Failed to determine current master in output: `%s`", master)
+            raise SystemExit(1)
+        return master
+
+    def check_for_master_change(self) -> None:
+        current_master = self.get_current_master()
+        if self.master != current_master:
+            logger.error("master changed from `%s` to `%s`. Aborting...", self.master, current_master)
+            raise SystemExit(1)
+
+    def run_write_command(self, cmd: str, remote_host: str = "") -> str:
+        self.check_for_master_change()
+        return self.run_command(cmd, ignore_dry_run=False, remote_host=remote_host)
+
+    def run_read_command(self, cmd: str, remote_host: str = "") -> str:
+        self.check_for_master_change()
+        return self.run_command(cmd, ignore_dry_run=True, remote_host=remote_host)
+
+
+def run_write_command(cmd: str, remote_host: str = "") -> str:
+    return CommandRunner().run_write_command(cmd, remote_host=remote_host)
+
+
+def run_read_command(cmd: str, remote_host: str = "") -> str:
+    return CommandRunner().run_read_command(cmd, remote_host=remote_host)
+
+
+# FIXME Change to @cache when upgrading to python>=3.9
+@lru_cache()
+def get_hostname(ip: str) -> str:
+    return run_read_command("hostname", remote_host=ip)
+
+
+class Host:
+    def __init__(self, ip: str):
+        self.ip = ip
+
+    @property
+    def hostname(self) -> str:
+        return get_hostname(self.ip)
+
+    def __str__(self) -> str:
+        return ",".join([self.hostname, self.ip])
+
+    def __eq__(self, other: Any) -> bool:
+        return isinstance(other, Host) and self.hostname == other.hostname
+
+    def __hash__(self) -> int:
+        return hash(self.hostname)
+
+    def to_json(self) -> JSON:
+        return {"ip": self.ip, "hostname": self.hostname}
+
+
+class LinstorPeer(Host):
+    def __init__(self, ip: str, from_ip: str):
+        super().__init__(ip)
+        self.from_host = Host(from_ip)
+
+    def __str__(self) -> str:
+        return ",".join([super().__str__(), str(self.from_host)])
+
+    # Intentionally not overloading eq and hash since the from_host
+    #  does not change the peer
+
+    def to_json(self) -> JSON:
+        return {
+            "ip": self.ip,
+            "hostname": self.hostname,
+            "from_host": self.from_host.to_json(),
+        }
+
+
+class ResourceKey:
+    """Represents the identifying pair of a resource's name and peer hostname.
+
+    Attributes:
+        name (str): The resource's name.
+        peer (LinstorPeer): The peer on which the resource instance resides.
+    """
+
+    def __init__(self, name: str, peer: LinstorPeer):
+        self.name = name
+        self.peer = peer
+
+    def __str__(self) -> str:
+        return f"{self.name}:{self.peer}"
+
+    def __eq__(self, other: Any) -> bool:
+        return isinstance(other, ResourceKey) and self.name == other.name and self.peer == other.peer
+
+    def __hash__(self) -> int:
+        return hash((self.name, self.peer))
+
+    def to_json(self) -> JSON:
+        return {"name": self.name, "peer": self.peer.to_json()}
+
+
+class ResourceStatus(ResourceKey):
+    """Represents a resource along with its synchronization status.
+
+    Extends:
+        ResourceKey
+
+    Attributes:
+        out_of_sync (int): Amount of data out of sync, in kilobytes (KB).
+            This value represents the replication lag between the different nodes.
+            It is gathered from LINSTOR's reported 'out-of-sync' metric.
+
+    Properties:
+        key (str): A string representation of the resource key (``name:peer``).
+    """
+
+    def __init__(self, name: str, peer: LinstorPeer, out_of_sync: int):
+        super().__init__(name, peer)
+        self.out_of_sync = out_of_sync
+
+    @property
+    def key(self) -> str:
+        return super().__str__()
+
+    def __str__(self) -> str:
+        return f"{self.key},{self.out_of_sync}"
+
+    def to_json(self) -> JSON:
+        return {
+            "name": self.name,
+            "peer": self.peer.to_json(),
+            "out_of_sync": self.out_of_sync,
+        }
+
+
+def get_peer_from_connection(connection: JSON) -> Optional[LinstorPeer]:
+    for path in connection.get("paths", []):
+        if path.get("established"):
+            remote = path.get("remote_host", {}).get("address")
+            local = path.get("this_host", {}).get("address")
+            if remote and local:
+                return LinstorPeer(remote, local)
+    return None
+
+
+def get_resources_from_status(
+    status: List[JSON],
+    oos_only: bool = False,
+    include: Optional[List[str]] = None,
+    exclude: Optional[List[str]] = None,
+) -> Iterator[ResourceStatus]:
+    return (
+        ResourceStatus(
+            name=resource.get("name", ""),
+            peer=cast(LinstorPeer, get_peer_from_connection(connection)),
+            out_of_sync=peer_device.get("out-of-sync", 0),
+        )
+        for resource in status
+        for connection in resource.get("connections", [])
+        for peer_device in connection.get("peer_devices", [])
+        if (
+            (not oos_only or peer_device.get("out-of-sync", 0) > 0)
+            and (not include or any(resource.get("name", "").startswith(p) for p in include))
+            and (not exclude or all(not resource.get("name", "").startswith(p) for p in exclude))
+            and get_peer_from_connection(connection)
+        )
+    )
+
+
+def get_peers_from_status(status: List[JSON]) -> Set[LinstorPeer]:
+    peers = set()
+    for resource in status:
+        for connection in resource.get("connections", []):
+            peer = get_peer_from_connection(connection)
+            if peer:
+                peers.add(peer)
+    return peers
+
+
+def get_status(remote_host: str = "") -> List[JSON]:
+    try:
+        return json.loads(run_read_command(DRBD_CMD_STATUS, remote_host=remote_host))
+    except json.JSONDecodeError as e:
+        logger.error("Failed to parse status: %s", e)
+        raise SystemExit(1)
+
+
+def get_resources(
+    oos_only: bool = False,
+    include: Optional[List[str]] = None,
+    exclude: Optional[List[str]] = None,
+    remote_host: str = "",
+) -> Iterator[ResourceStatus]:
+    return get_resources_from_status(get_status(remote_host), oos_only=oos_only, include=include, exclude=exclude)
+
+
+def drbd_verify_resource(resource: ResourceStatus, remote_host: str = "") -> None:
+    run_write_command(
+        DRBD_CMD_VERIFY.format(resource_name=resource.name, peer=resource.peer.hostname),
+        remote_host=remote_host,
+    )
+    run_read_command(
+        DRBD_CMD_WAIT_SYNC.format(resource_name=resource.name),
+        remote_host=remote_host,
+    )
+
+
+def drbd_resync_resource(resource: ResourceStatus, local: bool = False, remote_host: str = "") -> None:
+    cmd = DRBD_CMD_INVALIDATE if local else DRBD_CMD_INVALIDATE_REMOTE
+    run_write_command(
+        cmd.format(resource_name=resource.name, peer=resource.peer.hostname),
+        remote_host=remote_host,
+    )
+    run_read_command(
+        DRBD_CMD_WAIT_SYNC.format(resource_name=resource.name),
+        remote_host=remote_host,
+    )
+
+
+def get_all_peers() -> Set[LinstorPeer]:
+    hosts = get_peers_from_status(get_status())
+    if not hosts:
+        logger.error("No peers found")
+        raise SystemExit(1)
+    local_ip = next(iter(hosts)).from_host.ip
+    hosts.add(LinstorPeer(local_ip, local_ip))
+    return hosts
+
+
+def main(
+    include: Optional[List[str]] = None,
+    exclude: Optional[List[str]] = None,
+    print_report: bool = False,
+    output_file: str = "stdout",
+    verify_only: bool = False,
+) -> None:
+    hosts = get_all_peers()
+    all_resources: Dict[str, List[ResourceStatus]] = {}
+    reports: List[ResourceStatus] = []
+    for host in hosts:
+        remote_host = host.ip if host.ip != host.from_host.ip else ""
+
+        for resource in list(get_resources(include=include, exclude=exclude, remote_host=remote_host)):
+            drbd_verify_resource(resource, remote_host=remote_host)
+
+        for resource in get_resources(oos_only=True, include=include, exclude=exclude, remote_host=remote_host):
+            logger.info(
+                "resource `%s` on `%s` is out of sync by %s",
+                resource.name,
+                resource.peer.hostname,
+                resource.out_of_sync,
+            )
+            all_resources.setdefault(resource.name, []).append(resource)
+
+    for resource_name, resources in all_resources.items():
+        msg = f"{resource_name} is reported out-of-sync by:"
+        counts = Counter(resources)
+        for resource, count in counts.items():
+            msg += "\n\t{} on {} by {}".format(
+                resource.peer.from_host.hostname, resource.peer.hostname, resource.out_of_sync
+            )
+        logger.info(msg)
+
+        max_count = counts.most_common(1)[0][1]  # [(resource, count)]
+        top_resources = [r for r, c in counts.most_common() if c == max_count]
+
+        # Each host will check which peer's resource has different values,
+        #  admitting 2 hosts with a sane resource and 1 with corrupted data:
+        #  The corrupted one will report each as out-of-sync,
+        #  while the sane ones will report the corrupted one as out-of-sync;
+        #  this will result in 2 reports for the corrupted one
+        #  and one report for each sane host. We can infer from this that the one with
+        #  the most reports is the corrupted one.
+        #  In the event of a tie, it's safer to leave it to human decision
+        #  since which is which can't be inferred.
+        if len(top_resources) > 1:
+            logger.error(
+                "Tie detected: multiple hosts with highest reports (%d): %s. Skipping.",
+                max_count,
+                ", ".join([s.peer.hostname for s in top_resources]),
+            )
+            continue
+
+        top_resource = top_resources[0]
+        logger.info("Designated %s as the host with the corrupted %s", top_resource.peer.hostname, top_resource.name)
+        reports.append(top_resource)
+
+        if verify_only:
+            continue
+
+        drbd_resync_resource(top_resource, remote_host=top_resource.peer.from_host.ip)
+
+    if print_report:
+        report = json.dumps(reports, default=lambda o: o.to_json())
+        if output_file == "stdout":
+            print(report)
+            return
+        dir_path = os.path.dirname(output_file)
+        if not os.path.exists(dir_path):
+            os.makedirs(dir_path, exist_ok=True)
+        with open(output_file, 'w') as f:
+            f.write(report)
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--verify-only", action="store_true")
+    parser.add_argument("--print", action="store_true")
+    parser.add_argument("--service", action="store_true")
+    parser.add_argument(
+        "--include", action="append", help="resource prefix to include. Can be specified multiple times"
+    )
+    parser.add_argument(
+        "--exclude", action="append", help="resource prefix to exclude. Can be specified multiple times"
+    )
+    parser.add_argument("--output", help="output file to use with --print", default="stdout")
+    parser.add_argument("--key", help="ssh key to use for connection to peers")
+    parser.add_argument(
+        "--log-level",
+        type=lambda x: x.upper(),
+        choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
+        default="INFO",
+    )
+
+    args = parser.parse_args()
+
+    log_format = "%(levelname)-8s %(message)s"
+    if not args.service:
+        log_format = f"%(asctime)s {SCRIPT_NAME}: [{os.getpid()}] {log_format}"
+    logging.basicConfig(
+        level=getattr(logging, args.log_level.upper(), None), format=log_format, datefmt="%b %e %H:%M:%S"
+    )
+
+    _ = CommandRunner(dry_run=args.dry_run, ssh_key=args.key)
+
+    main(
+        include=args.include,
+        exclude=args.exclude,
+        print_report=args.print,
+        output_file=args.output,
+        verify_only=args.verify_only,
+    )
