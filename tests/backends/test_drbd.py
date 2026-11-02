@@ -27,6 +27,7 @@ from xcp_storage.backends.drbd import (
     Drbd,
     DrbdOpener,
 )
+import xcp_storage.log as log
 
 from xcp_storage.typing import (
     Any,
@@ -94,7 +95,7 @@ class TestGetDrbdStatus:
 
     def test_command_failure(self, mock_run_command: MagicMock, caplog: pytest.LogCaptureFixture) -> None:
         mock_run_command.return_value = ("[]", "xcp-volume-frite: No such resource\n", 10)
-        with caplog.at_level("INFO"):
+        with caplog.at_level(log.INFO):
             assert _get_drbd_status("xcp-volume-frite") == {}
         assert (
             "Failed to get DRBD status of resource `xcp-volume-frite`: "
@@ -103,7 +104,7 @@ class TestGetDrbdStatus:
 
     def test_command_not_found(self, mock_run_command: MagicMock, caplog: pytest.LogCaptureFixture) -> None:
         mock_run_command.side_effect = FileNotFoundError(2, "No such file or directory", _EXEC_PATH_DRBDSETUP)
-        with caplog.at_level("INFO"):
+        with caplog.at_level(log.INFO):
             assert _get_drbd_status("xcp-volume-patate") == {}
         assert (
             "Failed to get DRBD status of resource `xcp-volume-patate`: "
@@ -115,13 +116,13 @@ class TestGetDrbdStatus:
         self, mock_run_command: MagicMock, caplog: pytest.LogCaptureFixture, stdout: str
     ) -> None:
         mock_run_command.return_value = (stdout, "", 0)
-        with caplog.at_level("INFO"):
+        with caplog.at_level(log.INFO):
             assert _get_drbd_status("xcp-volume-patate") == {}
         assert "Failed to read DRBD status of resource `xcp-volume-patate` as JSON" in caplog.text
 
     def test_empty_list(self, mock_run_command: MagicMock, caplog: pytest.LogCaptureFixture) -> None:
         mock_run_command.return_value = ("[]", "", 0)
-        with caplog.at_level("INFO"):
+        with caplog.at_level(log.INFO):
             assert _get_drbd_status("xcp-volume-patate") == {}
         assert "Failed to parse DRBD configuration" in caplog.text
 
@@ -223,7 +224,7 @@ class TestGetDrbdLocalOpeners:
     ) -> None:
         mock_read_text.return_value = f"{line}\n"
 
-        with caplog.at_level("WARNING"):
+        with caplog.at_level(log.WARNING):
             assert Drbd.get_local_openers("res-test", 0) == []
         assert f"Unable to parse DRBD opener line of volume `res-test/0` with: `{line}`." in caplog.text
 
@@ -236,7 +237,7 @@ class TestGetDrbdLocalOpeners:
             "No such file or directory",
             openers_path
         )
-        with caplog.at_level("INFO"):
+        with caplog.at_level(log.INFO):
             assert Drbd.get_local_openers("res-test", 0) == []
         assert (
             "Unable to get DRBD openers of volume `res-test/0`: "
@@ -253,7 +254,7 @@ class TestDemoteDrbd:
 
     def test_command_not_found(self, mock_run_command: MagicMock, caplog: pytest.LogCaptureFixture) -> None:
         mock_run_command.side_effect = FileNotFoundError(2, "No such file or directory", _EXEC_PATH_DRBDSETUP)
-        with caplog.at_level("INFO"):
+        with caplog.at_level(log.INFO):
             assert not Drbd.demote("res-test")
         assert (
             "Failed to demote DRBD resource `res-test`: "
@@ -273,7 +274,7 @@ class TestDemoteDrbd:
         )
         mock_run_command.return_value = ("", stderr, 11)
 
-        with caplog.at_level("INFO"):
+        with caplog.at_level(log.INFO):
             assert not Drbd.demote("res-test")
         assert f"Failed to demote DRBD resource `res-test`: `{stderr}`." in caplog.text
 

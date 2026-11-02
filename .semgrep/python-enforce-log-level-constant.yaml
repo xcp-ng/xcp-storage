@@ -1,0 +1,18 @@
+rules:
+  - id: python-enforce-log-level-constant
+    languages: [python]
+    severity: WARNING
+    message: "Use the log level constants of `xcp_storage.log` (`log.INFO`, ...), not strings."
+    paths:
+      include:
+        - tests/
+    patterns:
+      - pattern-either:
+          - pattern: $OBJECT.at_level($LEVEL, ...)
+          - pattern: $OBJECT.at_level(..., level=$LEVEL, ...)
+          - pattern: $OBJECT.set_level($LEVEL, ...)
+          - pattern: $OBJECT.set_level(..., level=$LEVEL, ...)
+          - pattern: $OBJECT.setLevel($LEVEL)
+      - metavariable-regex:
+          metavariable: $LEVEL
+          regex: '^["''](DEBUG|INFO|WARNING|ERROR|CRITICAL)["'']$'
