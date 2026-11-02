@@ -14,11 +14,11 @@
 
 # ==============================================================================
 
-def stringify_exception(e: Exception) -> str:
+def stringify_exception(exception: Exception) -> str:
     try:
-        return str(e)
+        return str(exception)
     except Exception:
         try:
-            return f"Exception of type `{e.__class__.__name__}`."
+            return f"Exception of type `{exception.__class__.__name__}`."
         except Exception:
             return "Unknown Exception."

@@ -60,12 +60,12 @@ def _configure_logger() -> None:
 
     def _excepthook(
         exception_type: Type[BaseException],
-        exception_value: BaseException,
+        exception: BaseException,
         exception_traceback: Optional[TracebackType]
     ) -> None:
         if not issubclass(exception_type, KeyboardInterrupt):
-            _LOGGER.error("Unhandled exception.", exc_info=(exception_type, exception_value, exception_traceback))
-        sys.__excepthook__(exception_type, exception_value, exception_traceback)
+            _LOGGER.error("Unhandled exception.", exc_info=(exception_type, exception, exception_traceback))
+        sys.__excepthook__(exception_type, exception, exception_traceback)
     sys.excepthook = _excepthook
 
 # ------------------------------------------------------------------------------

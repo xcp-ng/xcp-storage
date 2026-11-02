@@ -1,0 +1,10 @@
+rules:
+  - id: python-forbid-direct-logging-import
+    languages: [python]
+    severity: WARNING
+    message: "Import from `xcp_storage.log`, not from `logging`."
+    paths:
+      exclude:
+        - src/xcp_storage/log.py
+    # Note: "from", "as", ... imports are also handled by semgrep with this simple pattern.
+    pattern: import logging

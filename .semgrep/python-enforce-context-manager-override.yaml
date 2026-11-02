@@ -1,0 +1,18 @@
+rules:
+  - id: python-enforce-context-manager-override
+    languages: [python]
+    severity: WARNING
+    message: "`$FUNCTION` must be decorated with `@override`: the class must inherit from `contextlib.AbstractContextManager`."
+    patterns:
+      - pattern: |
+          def $FUNCTION(...):
+              ...
+      - metavariable-regex:
+          metavariable: $FUNCTION
+          regex: '^__(?:enter|exit)__$'
+      # Decorator from `@typing.override` or `xcp_storage.typing.override`.
+      - pattern-not: |
+          @$MODULE.override
+          def $FUNCTION(...):
+              ...
+      - focus-metavariable: $FUNCTION

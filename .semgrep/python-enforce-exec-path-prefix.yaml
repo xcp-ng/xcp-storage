@@ -1,0 +1,28 @@
+rules:
+  - id: python-enforce-exec-path-prefix
+    languages: [python]
+    severity: WARNING
+    message: "Executable path variable `$VAR` must use `EXEC_PATH_` or `_EXEC_PATH_` prefix."
+    patterns:
+      - pattern-either:
+          - patterns:
+              - pattern-either:
+                  - pattern: "$VAR = \"$PATH\""
+                  - pattern: "self.$VAR = \"$PATH\""
+                  - pattern: "$VAR = Path(\"$PATH\")"
+                  - pattern: "self.$VAR = Path(\"$PATH\")"
+              - metavariable-regex:
+                  metavariable: $PATH
+                  regex: |-
+                    (?x)
+                    ^(
+                        /(usr/(local/)?)?s?bin/.+
+                      | /usr/(local/)?libexec/.+
+                      | /opt/.+/s?bin/.+
+                    )$
+          - pattern: "$VAR = get_exec_path(...)"
+          - pattern: "self.$VAR = get_exec_path(...)"
+      - focus-metavariable: $VAR
+      - metavariable-regex:
+          metavariable: $VAR
+          regex: '^(?!_?EXEC_PATH_)\w+$'
