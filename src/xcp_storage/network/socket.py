@@ -242,6 +242,24 @@ def create_client_sock(
 
 # ------------------------------------------------------------------------------
 
+SocketPair = Tuple[socket.socket, socket.socket]
+
+def create_socket_pair(*, timeout: Optional[float] = None) -> SocketPair:
+    first, second = socket.socketpair()
+    try:
+        _normalize_and_set_sock_timeout(first, timeout)
+        _normalize_and_set_sock_timeout(second, timeout)
+    except OSError as e:
+        with contextlib.suppress(Exception):
+            first.close()
+        with contextlib.suppress(Exception):
+            second.close()
+        raise SocketError("Failed to create sock pair.") from e
+
+    return first, second
+
+# ------------------------------------------------------------------------------
+
 def set_socket_reuseaddr(sock: socket.socket) -> None:
     """
     Enable SO_REUSEADDR on `sock`.

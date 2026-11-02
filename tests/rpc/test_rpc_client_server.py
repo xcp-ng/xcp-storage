@@ -31,7 +31,7 @@ import xcp_storage.rpc.api as api
 from xcp_storage.rpc.client import RpcApiClient
 from xcp_storage.rpc.server import RpcApiServer
 from xcp_storage.utils.json import JsonDict
-from xcp_storage.utils.json.rpc import JsonRpcRequestError
+from xcp_storage.utils.json.rpc import JsonRpcRequestError, JsonRpcResponseError
 
 from xcp_storage.typing import (
     Final,
@@ -73,6 +73,27 @@ class TestRpcClient:
 
 @over_plain_and_tls
 class TestRpcClientServer:
+    def test_client_disconnected_on_send_failure(self, rpc_client_factory: RpcClientFactory) -> None:
+        rpc_client = rpc_client_factory()
+        with patch.object(rpc_client._protocol, "send_packet", side_effect=SocketDisconnectedError("Forced.")), \
+            pytest.raises(SocketDisconnectedError, match="Forced."): # noqa: SLF001
+            rpc_client.connect()
+
+        assert not rpc_client.connected
+
+    def test_client_disconnected_on_error_response(self, rpc_client_factory: RpcClientFactory) -> None:
+        rpc_client = rpc_client_factory()
+        rpc_client.connect()
+
+        with pytest.raises(JsonRpcResponseError, match="Method not found"):
+            rpc_client.call("echo.unknown_method")
+
+        assert not rpc_client.connected
+
+        # The next call reconnects.
+        assert rpc_client.call("echo.echo", params={"message": "ok"}) == "ok"
+        assert rpc_client.connected
+
     @pytest.mark.parametrize("retry_on_disconnect", [True, False])
     def test_retry_call_on_socket_disconnect(
         self, rpc_client_factory: RpcClientFactory, *, retry_on_disconnect: bool
@@ -170,6 +191,35 @@ class TestRpcClientServer:
 
         assert packet.seq == 0
 
+    def test_server_closes_connection_on_protocol_error(self, rpc_client_factory: RpcClientFactory) -> None:
+        rpc_client = rpc_client_factory()
+        rpc_client.connect()
+
+        tcp_socket = rpc_client._tcp_client.socket # noqa: SLF001
+        assert tcp_socket
+
+        sock = tcp_socket.sock
+        protocol = rpc_client._protocol # noqa: SLF001
+        message_types = (Protocol.MessageType.RESPONSE, )
+
+        # CONNECT is not expected once connected. The server rejects the packet without reading its payload:
+        # it cannot keep reading from this stream.
+        seq = 1
+        protocol.send_packet(sock, protocol.create_packet(Protocol.MessageType.CONNECT, seq, b"unread payload"))
+        assert protocol.receive_packet(sock, message_types).seq == seq
+
+        with pytest.raises(SocketDisconnectedError):
+            protocol.receive_packet(sock, message_types)
+
+    def test_server_survives_client_closed_before_connect(
+        self, rpc_server: RpcApiServer, rpc_client_factory: RpcClientFactory
+    ) -> None:
+        # Connect and close without sending anything.
+        with TcpClient(rpc_server.address, rpc_server.port, client_timeout=CLIENT_TIMEOUT):
+            pass
+
+        assert rpc_client_factory().call("echo.echo", params={"message": "alive"}) == "alive"
+
     def test_server_stops_during_call(self, rpc_server: RpcApiServer, rpc_client_factory: RpcClientFactory) -> None:
         rpc_client = rpc_client_factory()
         rpc_client.connect()
@@ -186,6 +236,7 @@ class TestRpcClientServer:
             rpc_client.call("echo.defer_echo", params={"message": "bonjour", "delay": 2.0})
 
         assert not rpc_client.connected
+
 # ------------------------------------------------------------------------------
 
 class TestRpcServerClientLimits:
