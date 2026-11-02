@@ -26,6 +26,12 @@ from xcp_storage.typing import Final, Mapping, Tuple
 DEFAULT_FIREWALL_INPUT_CHAIN: Final = "xapi-INPUT"
 
 # ------------------------------------------------------------------------------
+# Default system paths.
+# ------------------------------------------------------------------------------
+
+RUNTIME_DIR_PATH: Final = Path("/run")
+
+# ------------------------------------------------------------------------------
 
 _OS_RELEASE_PATH: Final = "/etc/os-release"
 
