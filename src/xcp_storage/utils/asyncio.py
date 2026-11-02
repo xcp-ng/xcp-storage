@@ -15,7 +15,16 @@
 import asyncio
 import contextlib
 
+from xcp_storage.typing import Final
+
 # ==============================================================================
+
+# Closing a TLS stream sends a `close_notify` to the peer, and asyncio only closes the TCP socket once the
+# peer has sent its own back. A peer that never answers would keep the connection open: `asyncio` waits forever
+# before Python 3.11 (30s since). After this delay (in seconds), the connection is aborted instead.
+_TLS_SHUTDOWN_TIMEOUT: Final = 2.0
+
+# ------------------------------------------------------------------------------
 
 def cancel_event_loop_tasks(event_loop: asyncio.AbstractEventLoop) -> None:
     try:
@@ -34,4 +43,11 @@ async def close_stream_writer(stream: asyncio.StreamWriter) -> None:
     with contextlib.suppress(Exception):
         if not stream.transport.is_closing():
             stream.close()
+            abort_timer = None
+            if stream.get_extra_info("sslcontext"):
+                # TODO(XCPNG-3032): Replace with get_running_loop in python 3.7.
+                abort_timer = asyncio.get_event_loop().call_later(_TLS_SHUTDOWN_TIMEOUT, stream.transport.abort)
             await stream.wait_closed()
+            if abort_timer:
+                # Stream closed, no reason to force close the transport.
+                abort_timer.cancel()

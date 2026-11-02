@@ -14,10 +14,12 @@
 
 import asyncio
 import contextlib
+from functools import partial
 import socket
 import ssl
 import threading
 import time
+from unittest.mock import patch
 
 import pytest
 
@@ -48,6 +50,9 @@ SERVER_SHUTDOWN_TIMEOUT: Final = 5.0
 SERVER_THREAD_SHUTDOWN_TIMEOUT: Final = 5.0
 
 CLIENT_TIMEOUT: Final = 5.0
+
+# Short delay patched in `xcp_storage.utils.asyncio` to avoid waiting for the real TLS shutdown timeout.
+TLS_SHUTDOWN_TIMEOUT: Final = 0.2
 
 # ------------------------------------------------------------------------------
 
@@ -103,8 +108,12 @@ class EchoServer(TcpServer):
             data = await client.reader.read(1024)
             if not data:
                 return False
+
+            client.mark_busy()
             client.writer.write(data)
             await client.writer.drain()
+            client.mark_idle()
+
             return True
         except Exception:
             return False
@@ -140,10 +149,14 @@ class FragmentedServer(TcpServer):
         data = await client.reader.read(1024)
         if not data:
             return False
+
+        client.mark_busy()
         for octet in data:
             client.writer.write(bytes([octet]))
             await client.writer.drain()
             await asyncio.sleep(0.05)
+        client.mark_idle()
+
         return True
 
 # ------------------------------------------------------------------------------
@@ -160,8 +173,47 @@ class SingleRequestServer(TcpServer):
     @override
     async def _handle_client_request(self, client: TcpServer.Client) -> bool:
         await client.reader.read(1024)
+
+        client.mark_busy()
         client.writer.write(b"ACK")
         await client.writer.drain()
+        client.mark_idle()
+
+        return False
+
+# ------------------------------------------------------------------------------
+
+class SlowRequestServer(TcpServer):
+    @override
+    async def _handle_client_connect(self, client: TcpServer.Client) -> bool:
+        return True
+
+    @override
+    async def _handle_client_disconnect(self, client: TcpServer.Client) -> None:
+        pass
+
+    @override
+    async def _handle_client_request(self, client: TcpServer.Client) -> bool:
+        client.mark_busy()
+        client.writer.write(b"1")
+        await client.writer.drain()
+        await asyncio.sleep(60)
+        return False
+
+# ------------------------------------------------------------------------------
+
+class HangingConnectServer(TcpServer):
+    @override
+    async def _handle_client_connect(self, client: TcpServer.Client) -> bool:
+        await asyncio.sleep(60)
+        return True
+
+    @override
+    async def _handle_client_disconnect(self, client: TcpServer.Client) -> None:
+        pass
+
+    @override
+    async def _handle_client_request(self, client: TcpServer.Client) -> bool:
         return False
 
 # ==============================================================================
@@ -253,9 +305,11 @@ class TestTcpClient:
             ssl_context=ssl.create_default_context(),
             client_timeout=CLIENT_TIMEOUT
         )
+        # A certificate error is not transient: connect must fail at once instead of retrying until the timeout.
+        start_time = time.monotonic()
         with pytest.raises(TcpClientError, match="Unable to connect to server."):
-            tcp_client.connect()
-
+            tcp_client.connect(timeout=30.0)
+        assert time.monotonic() - start_time < CLIENT_TIMEOUT
         assert not tcp_client.connected
 
     @pytest.mark.parametrize("tcp_server", [EchoServer], indirect=True)
@@ -387,6 +441,7 @@ class TestTcpClientServer:
         assert not tcp_client.connected
 
     @pytest.mark.parametrize("tcp_server", [RejectConnectionServer], indirect=True)
+    @patch("xcp_storage.utils.asyncio._TLS_SHUTDOWN_TIMEOUT", TLS_SHUTDOWN_TIMEOUT)
     def test_client_send_to_closed_peer(self, tcp_client_factory: TcpClientFactory) -> None:
         tcp_client = tcp_client_factory()
         tcp_client.connect()
@@ -396,7 +451,8 @@ class TestTcpClientServer:
         assert tcp_client.socket
         assert tcp_client.socket.wait_readable(timeout=2.0)
 
-        deadline = time.monotonic() + 1.0
+        # With TLS, the server only closes the TCP connection after the shutdown timeout.
+        deadline = time.monotonic() + TLS_SHUTDOWN_TIMEOUT + 1.0
         with pytest.raises(SocketDisconnectedError, match="Unable to send data."):
             while time.monotonic() < deadline:
                 tcp_client.send(b"Moshimoshi?")
@@ -465,3 +521,69 @@ class TestTcpClientServer:
 
             for tcp_client in tcp_clients:
                 assert not tcp_client.connected
+
+# ------------------------------------------------------------------------------
+
+@over_plain_and_tls
+class TestTcpServerClientLimits:
+    ECHO_PAYLOAD: Final = b"ping"
+
+    @classmethod
+    def echo(cls, tcp_client: TcpClient) -> None:
+        # The echo guarantees that the server has registered the client
+        # and that it has finished to process its request.
+        tcp_client.send(cls.ECHO_PAYLOAD)
+        buffer = bytearray(len(cls.ECHO_PAYLOAD))
+        tcp_client.receive(buffer)
+        assert bytes(buffer) == cls.ECHO_PAYLOAD
+
+    @pytest.mark.parametrize("tcp_server", [partial(SlowRequestServer, max_clients=1)], indirect=True)
+    def test_client_rejected_by_busy_server(self, tcp_client_factory: TcpClientFactory) -> None:
+        with tcp_client_factory() as tcp_client:
+            tcp_client.receive(bytearray(1))
+            with tcp_client_factory() as rejected_tcp_client, pytest.raises(SocketDisconnectedError):
+                rejected_tcp_client.receive(bytearray(1))
+            assert tcp_client.connected
+
+    @pytest.mark.parametrize("tcp_server", [partial(HangingConnectServer, max_clients=1)], indirect=True)
+    def test_server_can_reject_when_clients_are_connecting(self, tcp_client_factory: TcpClientFactory) -> None:
+        with tcp_client_factory() as first_tcp_client:
+            with tcp_client_factory() as second_tcp_client, pytest.raises(SocketDisconnectedError):
+                second_tcp_client.receive(bytearray(1))
+            assert first_tcp_client.connected
+
+    @pytest.mark.parametrize("tcp_server", [partial(HangingConnectServer, client_connect_timeout=0.5)], indirect=True)
+    def test_client_connect_timeout(self, tcp_client_factory: TcpClientFactory) -> None:
+        with tcp_client_factory() as tcp_client:
+            start_time = time.monotonic()
+
+            with pytest.raises(SocketDisconnectedError):
+                tcp_client.receive(bytearray(1))
+
+            elapsed_time = time.monotonic() - start_time
+            assert elapsed_time < 1.0
+            assert not tcp_client.socket
+
+    @pytest.mark.parametrize("tcp_server", [partial(EchoServer, max_clients=1)], indirect=True)
+    def test_server_can_evict_idle_client(self, tcp_client_factory: TcpClientFactory) -> None:
+        with tcp_client_factory() as idle_tcp_client:
+            self.echo(idle_tcp_client)
+            with tcp_client_factory() as new_tcp_client:
+                self.echo(new_tcp_client)
+                with pytest.raises(SocketDisconnectedError):
+                    idle_tcp_client.receive(bytearray(1))
+            assert not idle_tcp_client.socket
+
+    @pytest.mark.parametrize("tcp_server", [partial(EchoServer, max_clients=2)], indirect=True)
+    def test_server_evicts_longest_idle_client(self, tcp_client_factory: TcpClientFactory) -> None:
+        with tcp_client_factory() as first_tcp_client, tcp_client_factory() as second_tcp_client:
+            self.echo(first_tcp_client)
+            self.echo(second_tcp_client)
+            # The first client was connected first, but it is the second one that has been idle the longest.
+            self.echo(first_tcp_client)
+
+            with tcp_client_factory() as new_tcp_client:
+                self.echo(new_tcp_client)
+                with pytest.raises(SocketDisconnectedError):
+                    second_tcp_client.receive(bytearray(1))
+                self.echo(first_tcp_client)

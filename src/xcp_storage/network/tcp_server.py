@@ -18,6 +18,7 @@ import contextlib
 import ssl
 import sys
 import threading
+import time
 
 import xcp_storage.log as log
 from xcp_storage.network.socket import create_server_sock, Socket
@@ -25,14 +26,30 @@ from xcp_storage.utils.asyncio import cancel_event_loop_tasks, close_stream_writ
 
 from xcp_storage.typing import (
     Any,
+    Final,
+    List,
     Optional,
     override,
     Set,
+    Tuple,
 )
 
 # ==============================================================================
 
 logger = log.get_logger() # Use default logger.
+
+# ------------------------------------------------------------------------------
+
+# Default limits to protect the server against silent clients that never speak or that are too numerous.
+# Use `None` to disable this check.
+TCP_SERVER_DEFAULT_MAX_CLIENTS: Final = 256
+
+# Maximum duration in seconds to wait during `connect` step.
+TCP_SERVER_DEFAULT_CLIENT_CONNECT_TIMEOUT: Final = 10.0
+
+# Maximum duration without request from a connected client. It's used by the subclasses,
+# because only they know when they wait for a request.
+TCP_SERVER_DEFAULT_CLIENT_IDLE_TIMEOUT: Final = 300.0
 
 # ------------------------------------------------------------------------------
 
@@ -54,20 +71,38 @@ class TcpServer(ABC):
             self.reader = reader
             self.writer = writer
 
+            # Time since which a client is connected and waits for a request.
+            # `None` when client is processing a request.
+            # Only the `TcpServer` subclasses know when a request starts and ends:
+            # they must call `mark_busy` and `mark_idle` to have an effect on timeouts.
+            self.idle_since: Optional[float] = None
+
         @override
         def __str__(self) -> str:
             return str(self.peername)
+
+        def mark_idle(self) -> None:
+            self.idle_since = time.monotonic()
+
+        def mark_busy(self) -> None:
+            self.idle_since = None
 
     def __init__(
         self,
         address: str,
         port: int,
         *,
-        ssl_context: Optional[ssl.SSLContext] = None
+        ssl_context: Optional[ssl.SSLContext] = None,
+        max_clients: Optional[int] = TCP_SERVER_DEFAULT_MAX_CLIENTS,
+        client_connect_timeout: Optional[float] = TCP_SERVER_DEFAULT_CLIENT_CONNECT_TIMEOUT,
+        client_idle_timeout: Optional[float] = TCP_SERVER_DEFAULT_CLIENT_IDLE_TIMEOUT
     ) -> None:
         self._address = address
         self._port = port
         self._ssl_context = ssl_context
+        self._max_clients = max_clients
+        self._client_connect_timeout = client_connect_timeout
+        self._client_idle_timeout = client_idle_timeout
 
         self._running = False
 
@@ -94,7 +129,19 @@ class TcpServer(ABC):
         port = self._server_socket.port
         return port if port is not None else 0
 
-    def run(self) -> None: # noqa: C901
+    @property
+    def max_clients(self) -> Optional[float]:
+        return self._max_clients
+
+    @property
+    def client_connect_timeout(self) -> Optional[float]:
+        return self._client_connect_timeout
+
+    @property
+    def client_idle_timeout(self) -> Optional[float]:
+        return self._client_idle_timeout
+
+    def run(self) -> None:
         if self._running:
             raise TcpServerError("Server is already running.")
 
@@ -154,10 +201,7 @@ class TcpServer(ABC):
                 self._server.close()
                 # TODO(XCPNG-3032): Use `abort_clients` only.
                 for client in list(self._clients):
-                    try:
-                        client.writer.transport.abort()
-                    except Exception as e: # noqa: PERF203
-                        logger.debug("Failed to abort client %s transport: `%s`.", client, e)
+                    self._abort_client(client)
                 self._server = None
 
             if self._event_loop:
@@ -205,14 +249,20 @@ class TcpServer(ABC):
         client_writer: asyncio.StreamWriter
     ) -> None:
         client = self.Client(client_writer.get_extra_info("peername"), client_reader, client_writer)
+        if self._max_clients is not None and len(self._clients) >= self._max_clients and not self._evict_idle_client():
+            logger.warning("Too many clients (%d). Rejecting client %s.", len(self._clients), client)
+            await close_stream_writer(client_writer)
+            return
+
         logger.info("New client %s connected.", client)
         self._clients.add(client)
 
         connected = False
         try:
-            if not await self._handle_client_connect(client):
+            if not await asyncio.wait_for(self._handle_client_connect(client), self._client_connect_timeout):
                 return
             connected = True
+            client.mark_idle()
             while not client_writer.transport.is_closing():
                 if not await self._handle_client_request(client):
                     break
@@ -230,9 +280,38 @@ class TcpServer(ABC):
                 except Exception as e:
                     logger.error("Unhandled exception for client %s during disconnect: `%s`.", client, e)
 
-            await close_stream_writer(client_writer)
-            logger.info("Client %s disconnected.", client)
-            self._clients.remove(client)
+            try:
+                await close_stream_writer(client_writer)
+            finally: # Deal with `CancelledError`.
+                self._clients.discard(client)
+                logger.info("Client %s disconnected.", client)
+
+    def _evict_idle_client(self) -> bool:
+        # Evict the client that has been idle for the longest time, to make room for a new one.
+        # Clients that are not connected yet or that are processing a request are never evicted.
+        idle_clients: List[Tuple[float, TcpServer.Client]] = [
+            (client.idle_since, client) for client in self._clients if client.idle_since is not None
+        ]
+        if not idle_clients:
+            return False
+
+        idle_since, client = min(idle_clients, key=lambda idle_client: idle_client[0])
+        logger.warning(
+            "Too many clients (%d). Evicting client %s, idle for %.1fs.",
+            len(self._clients), client, time.monotonic() - idle_since
+        )
+
+        self._abort_client(client)
+        self._clients.remove(client)
+
+        return True
+
+    @staticmethod
+    def _abort_client(client: Client) -> None:
+        try:
+            client.writer.transport.abort()
+        except Exception as e:
+            logger.debug("Failed to abort client %s transport: `%s`.", client, e)
 
     @abstractmethod
     async def _handle_client_connect(self, client: Client) -> bool:
