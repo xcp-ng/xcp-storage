@@ -1,0 +1,136 @@
+# Comment `/add-pr-id` on a pull request to add its ` (#<number>)` suffix to the title of every commit.
+# `issue_comment` workflows always run the version of this file (and of the script) of the default
+# branch, never the one of the pull request.
+
+name: Add pull request ID
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+# Ensure we only run one job for one update on a PR.
+concurrency:
+  group: add-pr-id-${{ github.event.issue.number }}
+  cancel-in-progress: false
+
+jobs:
+  add-pr-id:
+    name: Add pull request ID
+    # Check command name and permissions to run the job.
+    if: >-
+      github.event.issue.pull_request &&
+      github.event.comment.body == '/add-pr-id' &&
+      contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.comment.author_association)
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      PR_NUMBER: ${{ github.event.issue.number }}
+    steps:
+      - name: Check commenter write permission
+        env:
+          COMMENTER: ${{ github.event.comment.user.login }}
+        run: |
+          role=$(gh api "repos/${GITHUB_REPOSITORY}/collaborators/${COMMENTER}/permission" --jq .role_name)
+          case "$role" in
+              admin|maintain|write) ;;
+              *)
+                  gh pr comment "$PR_NUMBER" --body "\`/add-pr-id\` requires write access to this repository."
+                  exit 1
+                  ;;
+          esac
+
+      - name: Get pull request
+        id: pr
+        run: |
+          gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" --jq '
+            "base_sha=\(.base.sha)",
+            "head_sha=\(.head.sha)",
+            "head_ref=\(.head.ref)",
+            "is_same_repo=\(.head.repo.full_name == env.GITHUB_REPOSITORY)",
+            "state=\(.state)"
+          ' >> "$GITHUB_OUTPUT"
+
+      - name: Refuse unsupported pull request
+        if: ${{ steps.pr.outputs.is_same_repo != 'true' || steps.pr.outputs.state != 'open' }}
+        run: |
+          gh pr comment "$PR_NUMBER" --body "\`/add-pr-id\` only works on open pull requests whose branch is in this repository."
+          exit 1
+
+      # /!\ The job code is run from the default branch, not from the pull request.
+      - name: Checkout tools
+        uses: actions/checkout@v6
+        with:
+          path: tools
+
+      - name: Checkout pull request
+        uses: actions/checkout@v6
+        with:
+          path: pr
+          ref: ${{ steps.pr.outputs.head_sha }}
+          fetch-depth: 0
+
+      - name: Add the ID to the commits
+        id: add
+        working-directory: pr
+        env:
+          BASE_SHA: ${{ steps.pr.outputs.base_sha }}
+          HEAD_SHA: ${{ steps.pr.outputs.head_sha }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          # With a single commit the ID is added by GitHub at merge: nothing to do (see
+          # `check-commit-messages`).
+          if [ "$(git rev-list --count "${BASE_SHA}..${HEAD_SHA}")" -le 1 ]; then
+              echo "The pull request has a single commit: its ID is added when it is merged, nothing to do." | tee ../output.txt
+              echo "pushed=false" >> "$GITHUB_OUTPUT"
+              exit 0
+          fi
+
+          if ! ../tools/.github/scripts/add-commit-pr-id "$BASE_SHA" "$HEAD_SHA" "$PR_NUMBER" 2>&1 | tee ../output.txt; then
+              echo "failed=true" >> "$GITHUB_OUTPUT"
+              exit 0
+          fi
+
+          if [ "$(git rev-parse HEAD)" = "$HEAD_SHA" ]; then
+              echo "pushed=false" >> "$GITHUB_OUTPUT"
+              exit 0
+          fi
+          echo "pushed=true" >> "$GITHUB_OUTPUT"
+
+      - name: Push
+        id: push
+        if: ${{ steps.add.outputs.pushed == 'true' }}
+        working-directory: pr
+        env:
+          HEAD_SHA: ${{ steps.pr.outputs.head_sha }}
+          HEAD_REF: ${{ steps.pr.outputs.head_ref }}
+        # Fails if somebody pushed to the branch in the meantime.
+        run: git push "--force-with-lease=refs/heads/${HEAD_REF}:${HEAD_SHA}" origin "HEAD:refs/heads/${HEAD_REF}"
+
+      - name: Report
+        if: ${{ always() && steps.add.conclusion != 'skipped' }}
+        env:
+          FAILED: ${{ steps.add.outputs.failed }}
+          PUSH_OUTCOME: ${{ steps.push.outcome }}
+        run: |
+          if [ "$FAILED" = "true" ]; then
+              status="Nothing was changed."
+          elif [ "$PUSH_OUTCOME" = "failure" ]; then
+              status="The branch was updated in the meantime, nothing was pushed: run \`/add-pr-id\` again."
+          else
+              status="Done."
+          fi
+          {
+              echo "\`/add-pr-id\`: ${status}"
+              echo
+              echo '```'
+              cat output.txt
+              echo '```'
+          } > comment.md
+          gh pr comment "$PR_NUMBER" --body-file comment.md
