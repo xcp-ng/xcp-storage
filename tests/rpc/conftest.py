@@ -13,7 +13,6 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 import ssl
-import threading
 
 import pytest
 
@@ -23,6 +22,7 @@ from tests.network.tls import (  # noqa: F401
     tls_contexts,
     TlsContexts,
 )
+from tests.utils.thread import create_thread_group
 from xcp_storage.rpc.client import RpcApiClient
 from xcp_storage.rpc.server import RpcApiServer
 from xcp_storage.utils.contextlib import scoped_factory
@@ -52,15 +52,13 @@ def rpc_server(
 ) -> Generator[RpcApiServer, None, None]:
     server_class = getattr(request, "param", RpcApiServer)
     server = server_class("127.0.0.1", 0, ssl_context=ssl_contexts.server if ssl_contexts else None)
-    server_thread = threading.Thread(target=server.run, daemon=True)
-    server_thread.start()
-    try:
-        assert server.wait_for_startup(timeout=SERVER_STARTUP_TIMEOUT), "Server not started."
-        yield server
-    finally:
-        server.stop(timeout=SERVER_SHUTDOWN_TIMEOUT)
-        server_thread.join(timeout=SERVER_THREAD_SHUTDOWN_TIMEOUT)
-        assert not server_thread.is_alive(), "Server thread still alive."
+    with create_thread_group(join_timeout=SERVER_THREAD_SHUTDOWN_TIMEOUT) as thread_group:
+        thread_group.start(server.run)
+        try:
+            assert server.wait_for_startup(timeout=SERVER_STARTUP_TIMEOUT), "Server not started."
+            yield server
+        finally:
+            server.stop(timeout=SERVER_SHUTDOWN_TIMEOUT)
 
 RpcClientFactory = Callable[..., RpcApiClient]
 

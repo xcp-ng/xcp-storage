@@ -12,7 +12,6 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-from concurrent.futures import ThreadPoolExecutor
 from functools import partial
 import socket
 import ssl
@@ -23,6 +22,7 @@ import pytest
 
 from tests.network.tls import over_plain_and_tls
 from tests.rpc.conftest import CLIENT_TIMEOUT, RpcClientFactory
+from tests.utils.thread import create_thread_group
 from xcp_storage.network.protocol import Protocol, ProtocolError
 from xcp_storage.network.protocol.xcp import XcpProtocol
 from xcp_storage.network.socket import SocketDisconnectedError
@@ -269,8 +269,10 @@ class TestRpcServerClientLimits:
     @pytest.mark.parametrize("rpc_server", [partial(RpcApiServer, max_clients=2)], indirect=True)
     def test_max_clients_evicts_idle_client_not_busy_one(self, rpc_client_factory: RpcClientFactory) -> None:
         busy_rpc_client = rpc_client_factory(client_timeout=self.LONG_CLIENT_TIMEOUT)
-        with ThreadPoolExecutor(max_workers=1) as executor:
-            busy_call = executor.submit(busy_rpc_client.call_api, api.echo.defer_echo, message="slow", delay=1.5)
+        with create_thread_group(join_timeout=self.LONG_CLIENT_TIMEOUT) as thread_group:
+            busy_call_future = thread_group.start(
+                busy_rpc_client.call_api, api.echo.defer_echo, message="slow", delay=1.5
+            )
             # The slow request must have reached the server: this client is the oldest one, and it's busy.
             time.sleep(0.5)
 
@@ -283,5 +285,4 @@ class TestRpcServerClientLimits:
             with pytest.raises(SocketDisconnectedError):
                 # Must be evicted.
                 idle_rpc_client.call("echo.echo", params={"message": "late"}, retry_on_disconnect=False)
-
-            assert busy_call.result() == "slow"
+        assert busy_call_future.value == "slow"

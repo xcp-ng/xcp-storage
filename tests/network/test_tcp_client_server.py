@@ -17,7 +17,6 @@ import contextlib
 from functools import partial
 import socket
 import ssl
-import threading
 import time
 from unittest.mock import patch
 
@@ -25,6 +24,7 @@ import pytest
 
 from tests.network import find_free_tcp_port
 from tests.network.tls import over_plain_and_tls, TlsContexts
+from tests.utils.thread import create_thread_group
 from xcp_storage.network.socket import (
     get_socket_port,
     SocketDisconnectedError,
@@ -60,15 +60,13 @@ TLS_SHUTDOWN_TIMEOUT: Final = 0.2
 
 @contextlib.contextmanager
 def run_threaded_server(tcp_server: TcpServer) -> Generator[TcpServer, None, None]:
-    server_thread = threading.Thread(target=tcp_server.run, daemon=True)
-    server_thread.start()
-    try:
-        assert tcp_server.wait_for_startup(timeout=SERVER_STARTUP_TIMEOUT), "Server not started."
-        yield tcp_server
-    finally:
-        tcp_server.stop(timeout=SERVER_SHUTDOWN_TIMEOUT)
-        server_thread.join(timeout=SERVER_THREAD_SHUTDOWN_TIMEOUT)
-        assert not server_thread.is_alive(), "Server thread still alive."
+    with create_thread_group(join_timeout=SERVER_THREAD_SHUTDOWN_TIMEOUT) as thread_group:
+        thread_group.start(tcp_server.run)
+        try:
+            assert tcp_server.wait_for_startup(timeout=SERVER_STARTUP_TIMEOUT), "Server not started."
+            yield tcp_server
+        finally:
+            tcp_server.stop(timeout=SERVER_SHUTDOWN_TIMEOUT)
 
 @pytest.fixture
 def tcp_server(
@@ -291,14 +289,13 @@ class TestTcpClient:
             with run_threaded_server(tcp_server):
                 time.sleep(3.0)
 
-        thread = threading.Thread(target=run, daemon=True)
-        thread.start()
-        try:
-            with TcpClient("127.0.0.1", tcp_port, client_timeout=CLIENT_TIMEOUT) as tcp_client:
-                assert tcp_client.connected
-        finally:
-            tcp_server.stop(timeout=SERVER_SHUTDOWN_TIMEOUT)
-            thread.join(timeout=SERVER_THREAD_SHUTDOWN_TIMEOUT)
+        with create_thread_group(join_timeout=SERVER_THREAD_SHUTDOWN_TIMEOUT) as thread_group:
+            thread_group.start(run)
+            try:
+                with TcpClient("127.0.0.1", tcp_port, client_timeout=CLIENT_TIMEOUT) as tcp_client:
+                    assert tcp_client.connected
+            finally:
+                tcp_server.stop(timeout=SERVER_SHUTDOWN_TIMEOUT)
 
     @pytest.mark.parametrize("ssl_contexts", [True], indirect=True, ids=["tls"])
     @pytest.mark.parametrize("tcp_server", [EchoServer], indirect=True)
