@@ -25,6 +25,8 @@ from unittest.mock import (
 
 import pytest
 
+from tests.network import busy_unix_server_sock
+from tests.utils.fd import assert_no_fd_leak
 from xcp_storage.network.socket import (
     _MAX_PORT,
     _SERVER_BACKLOG,
@@ -50,6 +52,7 @@ from xcp_storage.network.socket import (
     SocketPair,
     SocketTimeoutError,
 )
+from xcp_storage.utils.time import Clock
 
 from xcp_storage.typing import (
     Callable,
@@ -684,15 +687,21 @@ class TestSocketWaitReadable:
 # ------------------------------------------------------------------------------
 
 class TestUnixSocket:
-    def test_unix_client_server_is_busy(self, mock_socket_class: MagicMock, unix_socket_path: Path) -> None:
-        # The listen queue of the server is full.
-        mock_socket = mock_socket_class.return_value
-        mock_socket.connect.side_effect = OSError(errno.EAGAIN, "Try again.")
+    def test_unix_client_server_is_busy(self, unix_socket_path: Path) -> None:
+        # With a timeout, the connection does not wait for a free place in the full listen queue.
+        timeout = 5.0
+        with busy_unix_server_sock(unix_socket_path), assert_no_fd_leak():
+            clock = Clock()
+            with pytest.raises(SocketBusyError):
+                create_unix_client_sock(unix_socket_path, timeout=timeout)
+            assert clock.elapsed_time < timeout
 
-        with pytest.raises(SocketBusyError):
-            create_unix_client_sock(unix_socket_path, timeout=0.1)
-
-        mock_socket.close.assert_called_once()
+    def test_unix_client_keeps_timeout(self, unix_socket_path: Path) -> None:
+        timeout = 1.0
+        with create_unix_server_sock(unix_socket_path), create_unix_client_sock(
+            unix_socket_path, timeout=timeout
+        ) as unix_client:
+            assert unix_client.gettimeout() == timeout
 
     def test_unix_client_without_socket_file(self, unix_socket_path: Path) -> None:
         with pytest.raises(SocketNotListeningError):

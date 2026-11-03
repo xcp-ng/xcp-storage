@@ -331,12 +331,23 @@ def create_unix_server_sock(path: StrPath, *, timeout: Optional[float] = None) -
     return sock
 
 def create_unix_client_sock(path: StrPath, *, timeout: Optional[float] = None) -> socket.socket:
+    """
+    Connect to the UNIX server sock `path`.
+
+    With a timeout, `SocketTimeoutError` is never raised; only `SocketBusyError` if the listen
+    queue of the server is full.
+
+    Without timeout, it waits for a free place in the queue.
+
+    In both cases, `timeout` stays on the returned sock for its next operations.
+    """
+
     sock = _create_stream_sock(socket.AF_UNIX)
     with _close_sock_on_error(sock):
         _normalize_and_set_sock_timeout(sock, timeout)
         try:
-            with _raise_on_sock_timeout():
-                sock.connect(str(path))
+            # No `_raise_on_sock_timeout`: a UNIX connection never returns `EINPROGRESS`, so it never times out.
+            sock.connect(str(path))
         except OSError as e:
             if e.errno in (errno.ENOENT, errno.ECONNREFUSED):
                 raise SocketNotListeningError("Nobody listens on UNIX sock.") from e
