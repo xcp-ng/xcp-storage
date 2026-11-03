@@ -12,38 +12,39 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-from pathlib import Path
-from unittest.mock import MagicMock, patch
-
 import pytest
 
-from xcp_storage.config.platform import PROC_DIR_PATH
+from tests.utils.process import ProcFs
 import xcp_storage.log as log
-from xcp_storage.utils.process import CommandError, get_process_cmdline, run_command
+from xcp_storage.utils.process import (
+    _get_process_cmdline_path,
+    CommandError,
+    get_process_cmdline,
+    run_command,
+)
 
 from xcp_storage.typing import Final
 
 # ==============================================================================
 
-@patch.object(Path, "read_bytes")
 class TestGetProcessCmdline:
     PID: Final = 67
 
-    def test_success(self, mock_read_bytes: MagicMock) -> None:
-        mock_read_bytes.return_value = b"python\x00-m\x00pytest\x00"
+    def test_success(self, proc_fs: ProcFs) -> None:
+        proc_fs.write_cmdline(self.PID, b"python\x00-m\x00pytest\x00")
         assert get_process_cmdline(self.PID) == ["python", "-m", "pytest"]
 
-    def test_null_args(self, mock_read_bytes: MagicMock) -> None:
-        mock_read_bytes.return_value = b"abricot\x00\x00\x00-orange\x00\x00jus ananas \x00"
+    def test_null_args(self, proc_fs: ProcFs) -> None:
+        proc_fs.write_cmdline(self.PID, b"abricot\x00\x00\x00-orange\x00\x00jus ananas \x00")
         assert get_process_cmdline(self.PID) == ["abricot", "-orange", "jus ananas "]
 
-    def test_non_utf8_args(self, mock_read_bytes: MagicMock) -> None:
-        mock_read_bytes.return_value = b"prog\x00\xff\xfe\x00arg\x00"
+    def test_non_utf8_args(self, proc_fs: ProcFs) -> None:
+        proc_fs.write_cmdline(self.PID, b"prog\x00\xff\xfe\x00arg\x00")
         assert get_process_cmdline(self.PID) == ["prog", "\ufffd\ufffd", "arg"]
 
-    def test_pid_not_found(self, mock_read_bytes: MagicMock, caplog: pytest.LogCaptureFixture) -> None:
-        cmdline_path = PROC_DIR_PATH / str(self.PID) / "cmdline"
-        mock_read_bytes.side_effect = FileNotFoundError(2, "No such file or directory", str(cmdline_path))
+    @pytest.mark.usefixtures("proc_fs")
+    def test_pid_not_found(self, caplog: pytest.LogCaptureFixture) -> None:
+        cmdline_path = _get_process_cmdline_path(self.PID)
 
         with caplog.at_level(log.INFO):
             assert get_process_cmdline(self.PID) == []
