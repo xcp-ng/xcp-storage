@@ -164,15 +164,15 @@ class HandleLock(Lock):
 
     @abstractmethod
     def _is_acquired(self) -> bool:
-        pass
+        pass # pragma: no cover
 
     @abstractmethod
     def _try_acquire(self, *, shared: bool, timeout: Optional[float]) -> bool:
-        pass
+        pass # pragma: no cover
 
     @abstractmethod
     def _close_handle(self) -> None:
-        pass
+        pass # pragma: no cover
 
     def _acquire(self, *, shared: bool, timeout: Optional[float]) -> None:
         if not self._try_acquire(shared=shared, timeout=timeout):
