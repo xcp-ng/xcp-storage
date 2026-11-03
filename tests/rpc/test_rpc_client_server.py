@@ -16,7 +16,7 @@ from functools import partial
 import socket
 import ssl
 import time
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -35,6 +35,7 @@ from xcp_storage.utils.json.rpc import JsonRpcRequestError, JsonRpcResponseError
 
 from xcp_storage.typing import (
     Final,
+    Iterator,
     List,
     Optional,
     Sequence,
@@ -42,6 +43,13 @@ from xcp_storage.typing import (
 )
 
 # ==============================================================================
+
+@pytest.fixture
+def mock_receive_packet_async() -> Iterator[MagicMock]:
+    with patch.object(XcpProtocol, "receive_packet_async", autospec=True) as mock_receive_packet_async:
+        yield mock_receive_packet_async
+
+# ------------------------------------------------------------------------------
 
 class TestRpcClient:
     def test_invalid_method(self, rpc_server: RpcApiServer) -> None:
@@ -179,13 +187,17 @@ class TestRpcClientServer:
         assert not rpc_client.connected
 
     def test_packet_unknown_seq_is_answered_with_zero(
-        self, rpc_server: RpcApiServer, client_ssl_context: Optional[ssl.SSLContext]
+        self,
+        rpc_server: RpcApiServer,
+        client_ssl_context: Optional[ssl.SSLContext],
+        mock_receive_packet_async: MagicMock
     ) -> None:
         # An unexpected error (not a protocol one) leaves the sequence number of the request unknown.
+        mock_receive_packet_async.side_effect = RuntimeError("boom")
         tcp_client = TcpClient(
             rpc_server.address, rpc_server.port, client_timeout=CLIENT_TIMEOUT, ssl_context=client_ssl_context
         )
-        with patch.object(XcpProtocol, "receive_packet_async", side_effect=RuntimeError("boom")), tcp_client:
+        with tcp_client:
             assert tcp_client.socket
             packet = XcpProtocol().receive_packet(tcp_client.socket.sock, (Protocol.MessageType.RESPONSE, ))
 
