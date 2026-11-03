@@ -82,9 +82,15 @@ class TestRpcClient:
 @over_plain_and_tls
 class TestRpcClientServer:
     def test_client_disconnected_on_send_failure(self, rpc_client_factory: RpcClientFactory) -> None:
+        error_message = "Forced."
+
         rpc_client = rpc_client_factory()
-        with patch.object(rpc_client._protocol, "send_packet", side_effect=SocketDisconnectedError("Forced.")), \
-            pytest.raises(SocketDisconnectedError, match="Forced."): # noqa: SLF001
+        with patch.object(
+            rpc_client._protocol, # noqa: SLF001
+            "send_packet",
+            side_effect=SocketDisconnectedError(error_message),
+            autospec=True
+        ), pytest.raises(SocketDisconnectedError, match=error_message):
             rpc_client.connect()
 
         assert not rpc_client.connected
@@ -150,8 +156,11 @@ class TestRpcClientServer:
 
         rpc_client._seq = XcpProtocol.MAX_SEQ - 2 # noqa: SLF001
 
-        with patch.object(protocol, "send_packet", side_effect=track_and_send), \
-                patch.object(protocol, "receive_packet", side_effect=track_and_receive):
+        with patch.object(
+            protocol, "send_packet", side_effect=track_and_send, autospec=True
+        ), patch.object(
+            protocol, "receive_packet", side_effect=track_and_receive, autospec=True
+        ):
             for i in range(5):
                 message = f"message-{i}"
                 assert rpc_client.call("echo.echo", params={"message": message}) == message
@@ -180,7 +189,7 @@ class TestRpcClientServer:
         def side_effect_send(sock: socket.socket, _packet: Protocol.Packet) -> None:
             sock.sendall(b"BBBBBBBBBBBBB")
 
-        with patch.object(rpc_client._protocol, "send_packet", side_effect=side_effect_send), \
+        with patch.object(rpc_client._protocol, "send_packet", side_effect=side_effect_send, autospec=True), \
             pytest.raises(ProtocolError, match="Invalid sequence detected. Current=16962, expected=2."): # noqa: SLF001
             rpc_client.call("echo.echo", params={"message": "ignored"})
 
@@ -243,7 +252,7 @@ class TestRpcClientServer:
             send_packet(sock, packet)
             rpc_server.stop()
 
-        with patch.object(rpc_client._protocol, "send_packet", side_effect=send_packet_and_stop), \
+        with patch.object(rpc_client._protocol, "send_packet", side_effect=send_packet_and_stop, autospec=True), \
             pytest.raises(TcpClientError, match="Unable to connect to server."): # noqa: SLF001
             rpc_client.call("echo.defer_echo", params={"message": "bonjour", "delay": 2.0})
 
