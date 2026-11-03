@@ -123,14 +123,14 @@ class TestRpcClientServer:
 
         message = "Bonjour !"
         params: JsonDict = {"message": message}
-        with patch.object(rpc_client, "_call", wraps=rpc_client._call) as call_spy: # noqa: SLF001
+        with patch.object(rpc_client, "_call", wraps=rpc_client._call) as spy_call: # noqa: SLF001
             if retry_on_disconnect:
                 assert rpc_client.call("echo.echo", params=params) == message
             else:
                 with pytest.raises(SocketDisconnectedError):
                     rpc_client.call("echo.echo", params=params, retry_on_disconnect=False)
 
-        assert call_spy.call_count == (2 if retry_on_disconnect else 1)
+        assert spy_call.call_count == (2 if retry_on_disconnect else 1)
         assert rpc_client.connected == retry_on_disconnect
 
         assert rpc_client.call("echo.echo", params=params) == message
