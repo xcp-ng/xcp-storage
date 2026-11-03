@@ -36,11 +36,24 @@ from xcp_storage.typing import (
     Any,
     Dict,
     Final,
+    Iterator,
     List,
     StrPath,
 )
 
 # ==============================================================================
+
+@pytest.fixture
+def mock_run_command() -> Iterator[MagicMock]:
+    with patch("xcp_storage.backends.drbd.run_command", autospec=True) as mock_run_command:
+        yield mock_run_command
+
+@pytest.fixture
+def mock_get_process_cmdline() -> Iterator[MagicMock]:
+    with patch("xcp_storage.backends.drbd.get_process_cmdline", autospec=True) as mock_get_process_cmdline:
+        yield mock_get_process_cmdline
+
+# ------------------------------------------------------------------------------
 
 @pytest.mark.parametrize("resource_name, volume_number, expected_path", [
     ("volume", 0, DRBD_BY_RES_PATH / "volume" / "0"),
@@ -87,7 +100,6 @@ def test_get_drbd_name_from_path(path: StrPath, expected_name: str) -> None:
 
 # ------------------------------------------------------------------------------
 
-@patch("xcp_storage.backends.drbd.run_command")
 class TestGetDrbdStatus:
     def test_success(self, mock_run_command: MagicMock, drbd_json_status_primary: str) -> None:
         mock_run_command.return_value = (drbd_json_status_primary, "", 0)
@@ -135,7 +147,6 @@ class TestGetDrbdStatus:
 
 # ------------------------------------------------------------------------------
 
-@patch("xcp_storage.backends.drbd.run_command")
 class TestGetDrbdConnectionAddress:
     def test_connection_address_a(
         self, mock_run_command: MagicMock, drbd_json_status_primary: str
@@ -159,7 +170,6 @@ class TestGetDrbdConnectionAddress:
 
 # ------------------------------------------------------------------------------
 
-@patch("xcp_storage.backends.drbd.run_command")
 class TestGetDrbdPrimaryAddress:
     def test_primary_local(
         self, mock_run_command: MagicMock, drbd_json_status_primary: str
@@ -206,7 +216,7 @@ class TestGetDrbdLocalOpeners:
         )
 
         cmdline_mapping = {d["pid"]: d["cmdline"] for d in opener_data}
-        mock_get_cmdline.side_effect = lambda pid: cmdline_mapping.get(pid, [])
+        mock_get_process_cmdline.side_effect = lambda pid: cmdline_mapping.get(pid, [])
 
         openers = Drbd.get_local_openers("res-test", 0)
 
@@ -253,7 +263,6 @@ class TestGetDrbdLocalOpeners:
 
 # ------------------------------------------------------------------------------
 
-@patch("xcp_storage.backends.drbd.run_command")
 class TestDemoteDrbd:
     def test_success(self, mock_run_command: MagicMock) -> None:
         mock_run_command.return_value = ("", "", 0)
@@ -306,8 +315,8 @@ class TestInvalidDrbdArguments:
     ])
     def test_invalid_resource_name(
         self,
-        mock_run_command: MagicMock,
         mock_read_text: MagicMock,
+        mock_run_command: MagicMock,
         resource_name: Any, # noqa: ANN401
         message: str
     ) -> None:
@@ -330,8 +339,8 @@ class TestInvalidDrbdArguments:
     ])
     def test_invalid_volume_number(
         self,
-        mock_run_command: MagicMock,
         mock_read_text: MagicMock,
+        mock_run_command: MagicMock,
         volume_number: Any, # noqa: ANN401
         message: str
     ) -> None:
