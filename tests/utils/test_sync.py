@@ -20,7 +20,7 @@ from xcp_storage.utils.sync import wait_for_condition
 
 # ==============================================================================
 
-@patch("time.sleep")
+@patch("time.sleep", autospec=True)
 class TestWaitForCondition:
     def test_success(self, mock_sleep: MagicMock) -> None:
         function = Mock(return_value=True)
@@ -47,7 +47,7 @@ class TestWaitForCondition:
         function.assert_called_once()
         mock_sleep.assert_not_called()
 
-    @patch("time.monotonic")
+    @patch("time.monotonic", autospec=True)
     def test_timeout_reached(self, mock_time: MagicMock, mock_sleep: MagicMock) -> None:
         mock_time.side_effect = [0.0, 2.5, 5.0, 5.0, 5.0]
         function = Mock(return_value=False)
@@ -56,7 +56,7 @@ class TestWaitForCondition:
         assert mock_sleep.call_count == 1
         mock_sleep.assert_called_with(1.0)
 
-    @patch("time.monotonic")
+    @patch("time.monotonic", autospec=True)
     def test_sleep_is_capped_by_remaining_time(self, mock_time: MagicMock, mock_sleep: MagicMock) -> None:
         mock_time.side_effect = [0.0, 4.5, 5.0, 5.0, 5.0]
         function = Mock(return_value=False)
