@@ -15,6 +15,7 @@
 import contextlib
 import multiprocessing.process
 import os
+from pathlib import Path
 import signal
 import subprocess
 
@@ -53,8 +54,11 @@ class ProcessTimeoutError(ProcessError):
 
 # ------------------------------------------------------------------------------
 
+def _get_process_cmdline_path(pid: int) -> Path:
+    return PROC_DIR_PATH / str(pid) / "cmdline"
+
 def get_process_cmdline(pid: int) -> List[str]:
-    path = PROC_DIR_PATH / str(pid) / "cmdline"
+    path = _get_process_cmdline_path(pid)
     try:
         return [arg.decode(errors="replace") for arg in path.read_bytes().split(b"\0") if arg]
     except Exception as e:
