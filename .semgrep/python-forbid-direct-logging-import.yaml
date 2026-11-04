@@ -7,4 +7,4 @@ rules:
       exclude:
         - src/xcp_storage/log.py
     # Note: "from", "as", ... imports are also handled by semgrep with this simple pattern.
-    pattern: import logging
+    pattern: "import logging"

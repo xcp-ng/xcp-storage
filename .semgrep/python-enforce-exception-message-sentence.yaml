@@ -7,7 +7,7 @@ rules:
       include:
         - src/
     patterns:
-      - pattern: $CLASS($MESSAGE, ...)
+      - pattern: "$CLASS($MESSAGE, ...)"
       - metavariable-regex:
           metavariable: $CLASS
           regex: '^(?:\w+\.)*\w*(?:Exception|Error)$'

@@ -15,7 +15,7 @@
 import contextlib
 import fcntl
 import os
-from pathlib import PurePath
+from pathlib import Path
 
 from xcp_storage.utils.file import close_fd
 from xcp_storage.utils.lock import (
@@ -31,7 +31,7 @@ from xcp_storage.typing import (
     Final,
     Optional,
     override,
-    Union,
+    StrPath,
 )
 
 # ==============================================================================
@@ -54,7 +54,7 @@ class FileLock(HandleLock):
 
     def __init__(
         self,
-        path: Union[str, PurePath],
+        path: StrPath,
         *,
         acquire_duration_threshold: Optional[float] = DEFAULT_LOCK_ACQUIRE_DURATION_THRESHOLD,
         lock_duration_threshold: Optional[float] = DEFAULT_LOCK_DURATION_THRESHOLD
@@ -71,14 +71,14 @@ class FileLock(HandleLock):
             acquire_duration_threshold=acquire_duration_threshold,
             lock_duration_threshold=lock_duration_threshold
         )
-        self._path = lock_path
+        self._path = Path(path)
 
     def __del__(self) -> None:
         if self._fd is not None:
             close_fd(self._fd)
 
     @property
-    def path(self) -> str:
+    def path(self) -> Path:
         return self._path
 
     @override

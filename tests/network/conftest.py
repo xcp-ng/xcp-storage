@@ -30,12 +30,12 @@ from xcp_storage.typing import Final, Generator
 SOCKET_PAIR_TIMEOUT: Final = 3.0
 
 @pytest.fixture
-def unix_socket_path(tmp_path: Path) -> str:
+def unix_socket_path(tmp_path: Path) -> Path:
     """
     Path of a unix socket, not created.
     """
 
-    return str(tmp_path / "unix.sock")
+    return tmp_path / "unix.sock"
 
 @pytest.fixture
 def socket_pair() -> Generator[SocketPair, None, None]:

@@ -15,7 +15,7 @@
 import contextlib
 from functools import lru_cache
 import os
-from pathlib import Path
+from pathlib import Path, PurePath
 import re
 import tempfile
 from unittest.mock import patch
@@ -45,8 +45,8 @@ from xcp_storage.typing import (
 # ==============================================================================
 
 # Directories of the runtime units, relative to the runtime directory of the manager.
-_SYSTEM_RUNTIME_UNIT_DIR_PATH: Final = Path("systemd/system")
-_USER_RUNTIME_UNIT_DIR_PATH: Final = Path("systemd/user")
+_SYSTEM_RUNTIME_UNIT_DIR_PATH: Final = PurePath("systemd/system")
+_USER_RUNTIME_UNIT_DIR_PATH: Final = PurePath("systemd/user")
 
 # Maximum duration of a `systemctl` call.
 # As a reminder: a `stop` waits for the units, bounded by their `TimeoutStopSec=`.
@@ -166,7 +166,7 @@ class ServiceManager(NamedTuple):
     def _run_systemctl_command(self, args: List[str], *, quiet: bool = False) -> str:
         return _run_systemctl_command(args, user_mode=self.user_mode, quiet=quiet)
 
-    def _link_runtime_unit(self, unit_path: Path, *, quiet: bool = False) -> None:
+    def _link_runtime_unit(self, unit_path: PurePath, *, quiet: bool = False) -> None:
         self._run_systemctl_command(["link", "--runtime", str(unit_path)], quiet=quiet)
 
     def _unlink_runtime_unit(self, unit_name: str) -> None:

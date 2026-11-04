@@ -13,7 +13,7 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 from functools import wraps
-from pathlib import Path
+from pathlib import PurePath
 import sys
 
 import xapi
@@ -48,7 +48,7 @@ XapiPlugin = Union[
 
 def execute_plugin_command(command_line: XapiPlugin) -> None:
     xapi_log.log_call_argv()
-    command_name = Path(sys.argv[0]).name
+    command_name = PurePath(sys.argv[0]).name
     method_name = command_name.split(".")[-1].lower()
     method = None
     # Check on plugin implementation if we have the method name.

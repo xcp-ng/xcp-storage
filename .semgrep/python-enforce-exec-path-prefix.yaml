@@ -2,27 +2,29 @@ rules:
   - id: python-enforce-exec-path-prefix
     languages: [python]
     severity: WARNING
-    message: "Executable path variable `$VAR` must use `EXEC_PATH_` or `_EXEC_PATH_` prefix."
+    message: "Executable path variable `$VARIABLE` must use `EXEC_PATH_` or `_EXEC_PATH_` prefix."
     patterns:
       - pattern-either:
+          # Assigned an executable path: `x = "/usr/bin/x"`, `x = Path("/usr/bin/x")`.
           - patterns:
               - pattern-either:
-                  - pattern: "$VAR = \"$PATH\""
-                  - pattern: "self.$VAR = \"$PATH\""
-                  - pattern: "$VAR = Path(\"$PATH\")"
-                  - pattern: "self.$VAR = Path(\"$PATH\")"
+                  - pattern: '$VARIABLE = "$PATH"'
+                  - pattern: 'self.$VARIABLE = "$PATH"'
+                  - pattern: '$VARIABLE = Path("$PATH")'
+                  - pattern: 'self.$VARIABLE = Path("$PATH")'
               - metavariable-regex:
                   metavariable: $PATH
                   regex: |-
                     (?x)
-                    ^(
-                        /(usr/(local/)?)?s?bin/.+
-                      | /usr/(local/)?libexec/.+
+                    ^(?:
+                        /(?:usr/(?:local/)?)?s?bin/.+
+                      | /usr/(?:local/)?libexec/.+
                       | /opt/.+/s?bin/.+
                     )$
-          - pattern: "$VAR = get_exec_path(...)"
-          - pattern: "self.$VAR = get_exec_path(...)"
-      - focus-metavariable: $VAR
+          # Assigned the result of `get_exec_path`.
+          - pattern: "$VARIABLE = get_exec_path(...)"
+          - pattern: "self.$VARIABLE = get_exec_path(...)"
+      - focus-metavariable: $VARIABLE
       - metavariable-regex:
-          metavariable: $VAR
+          metavariable: $VARIABLE
           regex: '^(?!_?EXEC_PATH_)\w+$'

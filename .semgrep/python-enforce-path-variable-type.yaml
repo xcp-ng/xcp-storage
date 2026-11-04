@@ -1,0 +1,40 @@
+rules:
+  - id: python-enforce-path-variable-type
+    languages: [python]
+    severity: WARNING
+    message: >-
+      Path variable `$VARIABLE` must hold a `PurePath` or a `Path`, not a string: use `PurePath(...)` or `Path(...)`
+      (a parameter only passed as is to an OS API, like `socket.bind` or `os.open`, can be typed `StrPath`
+      to accept both).
+    patterns:
+      - pattern-either:
+          # Assigned a string: `x = "..."`, `x = f"..."`.
+          - pattern: '$VARIABLE = "..."'
+          - pattern: 'self.$VARIABLE = "..."'
+          - pattern: '$VARIABLE = f"..."'
+          - pattern: 'self.$VARIABLE = f"..."'
+          # Declared as a string: `x: Optional[str]`.
+          - patterns:
+              - pattern-either:
+                  - pattern: "$VARIABLE: $TYPE"
+                  - pattern: "$VARIABLE: $TYPE = ..."
+                  - pattern: "self.$VARIABLE: $TYPE = ..."
+                  - pattern: |
+                      def $FUNCTION(..., $VARIABLE: $TYPE, ...):
+                          ...
+              - metavariable-regex:
+                  metavariable: $TYPE
+                  # No `Union[...]`: a union with `str` is not a string (`StrPath`).
+                  regex: |-
+                    (?x)
+                    ^(?:
+                        str
+                      | Optional\[\s*str\s*\]
+                      | Final\[\s*str\s*\]
+                      | str\s*\|\s*None
+                      | None\s*\|\s*str
+                    )$
+      - focus-metavariable: $VARIABLE
+      - metavariable-regex:
+          metavariable: $VARIABLE
+          regex: '^(?i:(?:\w*_)?path)$'

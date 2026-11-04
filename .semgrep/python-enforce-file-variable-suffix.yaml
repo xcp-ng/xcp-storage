@@ -2,40 +2,42 @@ rules:
   - id: python-enforce-file-variable-suffix
     languages: [python]
     severity: WARNING
-    message: "File variable `$VAR` must be named `file` or end with `_file`."
+    message: "File variable `$VARIABLE` must be named `file` or end with `_file`."
     patterns:
       - pattern-either:
+          # Assigned an opened file: `x = open(...)`, `with path.open() as x`.
           - patterns:
               - pattern-either:
+                  - pattern: "$VARIABLE = $EXPRESSION"
+                  - pattern: "self.$VARIABLE = $EXPRESSION"
                   - pattern: |
-                      with $EXPR as $VAR:
+                      with $EXPRESSION as $VARIABLE:
                           ...
-                  - pattern: "$VAR = $EXPR"
-                  - pattern: "self.$VAR = $EXPR"
               - metavariable-pattern:
-                  metavariable: $EXPR
+                  metavariable: $EXPRESSION
                   patterns:
                     - pattern-either:
-                        - pattern: open(...)
-                        - pattern: io.open(...)
-                        - pattern: os.fdopen(...)
-                        - pattern: Path(...).open(...)
-                        - pattern: tempfile.NamedTemporaryFile(...)
-                        - pattern: tempfile.TemporaryFile(...)
-                        - pattern: tempfile.SpooledTemporaryFile(...)
-                        - pattern: $SOCKET.makefile(...)
+                        - pattern: "open(...)"
+                        - pattern: "io.open(...)"
+                        - pattern: "os.fdopen(...)"
+                        - pattern: "Path(...).open(...)"
+                        - pattern: "tempfile.NamedTemporaryFile(...)"
+                        - pattern: "tempfile.TemporaryFile(...)"
+                        - pattern: "tempfile.SpooledTemporaryFile(...)"
+                        - pattern: "$SOCKET.makefile(...)"
                         - patterns:
-                            - pattern: $PATH.open(...)
+                            - pattern: "$PATH.open(...)"
                             - metavariable-regex:
                                 metavariable: $PATH
-                                regex: '^(.*[._])?path$'
+                                regex: '^(?i:(?:[\w.]*[._])?path)$'
+          # Declared as a file: `x: Optional[TextIO]`.
           - patterns:
               - pattern-either:
-                  - pattern: "$VAR: $TYPE"
-                  - pattern: "$VAR: $TYPE = ..."
-                  - pattern: "self.$VAR: $TYPE = ..."
+                  - pattern: "$VARIABLE: $TYPE"
+                  - pattern: "$VARIABLE: $TYPE = ..."
+                  - pattern: "self.$VARIABLE: $TYPE = ..."
                   - pattern: |
-                      def $FUNCTION(..., $VAR: $TYPE, ...):
+                      def $FUNCTION(..., $VARIABLE: $TYPE, ...):
                           ...
               - metavariable-regex:
                   metavariable: $TYPE
@@ -55,10 +57,12 @@ rules:
                     ^(?:
                         (?&FILE_TYPE)
                       | Optional\[\s*(?&FILE_TYPE)\s*\]
+                      | Final\[\s*(?&FILE_TYPE)\s*\]
+                      | Union\[.*\b(?&FILE_TYPE)(?!\w).*\]
                       | (?&FILE_TYPE)\s*\|\s*None
                       | None\s*\|\s*(?&FILE_TYPE)
                     )$
-      - focus-metavariable: $VAR
+      - focus-metavariable: $VARIABLE
       - metavariable-regex:
-          metavariable: $VAR
-          regex: '^(?!(?:(?:.*_)?file)$)[^.]+$'
+          metavariable: $VARIABLE
+          regex: '^(?!(?i:(?:\w*_)?file)$)\w+$'
