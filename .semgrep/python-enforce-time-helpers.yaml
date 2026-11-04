@@ -1,0 +1,13 @@
+rules:
+  - id: python-enforce-time-helpers
+    languages: [python]
+    severity: WARNING
+    message: "Measure durations with `Clock` or `Timer`, not directly with `time.$FUNCTION`."
+    paths:
+      exclude:
+        - src/xcp_storage/utils/time.py
+    patterns:
+      - pattern: "time.$FUNCTION"
+      - metavariable-regex:
+          metavariable: $FUNCTION
+          regex: '^(?:monotonic|perf_counter)(?:_ns)?$'

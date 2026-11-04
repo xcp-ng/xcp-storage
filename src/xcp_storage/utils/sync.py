@@ -14,6 +14,8 @@
 
 import time
 
+from xcp_storage.utils.time import Timer
+
 from xcp_storage.typing import (
     Callable,
     TypeVar,
@@ -27,12 +29,12 @@ def wait_for_condition(function: Callable[[], T], timeout: float, interval: floa
     if timeout <= 0:
         return function()
 
-    deadline = time.monotonic() + timeout
+    timer = Timer(timeout)
     while True:
         result = function()
         if result:
             return result
-        remaining = deadline - time.monotonic()
-        if remaining <= 0:
+        remaining_time = timer.remaining_time
+        if remaining_time <= 0:
             return result
-        time.sleep(min(interval, remaining))
+        time.sleep(min(interval, remaining_time))

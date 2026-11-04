@@ -14,10 +14,10 @@
 
 from abc import abstractmethod
 import contextlib
-import time
 from types import TracebackType
 
 import xcp_storage.log as log
+from xcp_storage.utils.time import Clock
 
 from xcp_storage.typing import (
     Final,
@@ -249,25 +249,24 @@ class LockDurationTracer:
         self._context = context
         self._acquire_duration_threshold = acquire_duration_threshold
         self._lock_duration_threshold = lock_duration_threshold
-        self._acquire_start_time = 0.0
-        self._acquired_at = 0.0
+        self._clock = Clock()
 
     def start_acquire(self) -> None:
-        self._acquire_start_time = time.monotonic()
+        self._clock.start()
 
     def notify_acquired(self) -> None:
-        self._acquired_at = time.monotonic()
+        acquire_time = self._clock.elapsed_time
+        self._clock.start()
         if self._acquire_duration_threshold is None:
             return
 
-        elapsed_time = self._acquired_at - self._acquire_start_time
-        if elapsed_time > self._acquire_duration_threshold:
-            logger.warning("Lock on `%s` took %.2f second(s) to acquire.", self._context, elapsed_time)
+        if acquire_time > self._acquire_duration_threshold:
+            logger.warning("Lock on `%s` took %.2f second(s) to acquire.", self._context, acquire_time)
 
     def notify_released(self) -> None:
         if self._lock_duration_threshold is None:
             return
 
-        elapsed_time = time.monotonic() - self._acquired_at
-        if elapsed_time > self._lock_duration_threshold:
-            logger.warning("Lock on `%s` locked for %.2f second(s).", self._context, elapsed_time)
+        lock_duration = self._clock.elapsed_time
+        if lock_duration > self._lock_duration_threshold:
+            logger.warning("Lock on `%s` locked for %.2f second(s).", self._context, lock_duration)

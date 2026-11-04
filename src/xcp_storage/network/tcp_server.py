@@ -82,7 +82,9 @@ class TcpServer(ABC):
             return str(self.peername)
 
         def mark_idle(self) -> None:
-            self.idle_since = time.monotonic()
+            # We don't want to use clock here, so semgrep warn is disabled.
+            # Why? In `_evict_idle_client` we don't want to recompute remaining time for each client.
+            self.idle_since = time.monotonic() # nosemgrep: python-enforce-time-helpers
 
         def mark_busy(self) -> None:
             self.idle_since = None
@@ -298,7 +300,8 @@ class TcpServer(ABC):
         idle_since, client = min(idle_clients, key=lambda idle_client: idle_client[0])
         logger.warning(
             "Too many clients (%d). Evicting client %s, idle for %.1fs.",
-            len(self._clients), client, time.monotonic() - idle_since
+            len(self._clients), client,
+            time.monotonic() - idle_since # nosemgrep: python-enforce-time-helpers
         )
 
         self._abort_client(client)

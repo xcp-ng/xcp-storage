@@ -32,6 +32,7 @@ from xcp_storage.utils.lock import (
     LockTimeoutError,
 )
 from xcp_storage.utils.lock.file import FileLock, ReadWriteFileLock
+from xcp_storage.utils.time import Clock
 
 from xcp_storage.typing import (
     Callable,
@@ -125,15 +126,15 @@ class TestFileLock:
         exception_message = f"Timeout while acquiring exclusive lock on `{lock_path}`."
 
         with first_lock:
-            start_time = time.monotonic()
+            clock = Clock()
             with pytest.raises(LockTimeoutError, match=exception_message):
                 second_lock.acquire(timeout=timeout)
-            assert time.monotonic() - start_time >= timeout
+            assert clock.elapsed_time >= timeout
 
-            start_time = time.monotonic()
+            clock.start()
             with pytest.raises(LockTimeoutError, match=exception_message):
                 second_lock.acquire(timeout=0)
-            assert time.monotonic() - start_time < 0.05
+            assert clock.elapsed_time < 0.05
 
             assert not second_lock.try_acquire()
 
@@ -297,15 +298,15 @@ class TestReadWriteFileLock:
         exception_message = f"Timeout while acquiring shared lock on `{lock_path}`."
 
         with first_lock:
-            start_time = time.monotonic()
+            clock = Clock()
             with pytest.raises(LockTimeoutError, match=exception_message):
                 second_lock.shared_acquire(timeout=timeout)
-            assert time.monotonic() - start_time >= timeout
+            assert clock.elapsed_time >= timeout
 
-            start_time = time.monotonic()
+            clock.start()
             with pytest.raises(LockTimeoutError, match=exception_message):
                 second_lock.shared_acquire(timeout=0)
-            assert time.monotonic() - start_time < 0.05
+            assert clock.elapsed_time < 0.05
 
             assert not second_lock.shared_try_acquire()
 
