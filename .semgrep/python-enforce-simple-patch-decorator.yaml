@@ -1,0 +1,37 @@
+rules:
+  - id: python-enforce-simple-patch-decorator
+    languages: [python]
+    severity: WARNING
+    message: "`@$DECORATOR` is restricted for a few set of external external functions, patch anything else in a fixture."
+    patterns:
+      # Each decorator of a test function, a method or a class, wherever it sits among the other decorators.
+      - pattern-either:
+          - pattern: |
+              @$DECORATOR($...ARGUMENTS)
+              def $FUNCTION(...):
+                  ...
+          - pattern: |
+              @$DECORATOR($...ARGUMENTS)
+              class $CLASS:
+                  ...
+      - metavariable-pattern:
+          metavariable: $DECORATOR
+          pattern-either:
+            - pattern: "unittest.mock.patch"
+            - pattern: "unittest.mock.patch.object"
+            - pattern: "unittest.mock.patch.multiple"
+            - pattern: "unittest.mock.patch.dict"
+      # Allowed form only: an allowed external function (patched for the whole process, so each one is reviewed), as a
+      # plain string, then `autospec=True`.
+      - metavariable-regex:
+          metavariable: $...ARGUMENTS
+          regex: |-
+            (?x)
+            ^(?!["'](?:
+                fcntl\.flock
+              | os\.close
+              | socket\.socketpair
+              | time\.monotonic
+              | time\.sleep
+            )["'],\s*autospec=True$)
+      - focus-metavariable: $DECORATOR
