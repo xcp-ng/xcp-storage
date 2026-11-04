@@ -1,0 +1,70 @@
+rules:
+  - id: python-enforce-future-variable-suffix
+    languages: [python]
+    severity: WARNING
+    message: "Future variable `$VARIABLE` must be named `future` or end with `_future`."
+    patterns:
+      - pattern-either:
+          # Created as a future: `x = asyncio.Future()`, `x = loop.create_future()`, `x = asyncio.ensure_future(...)`.
+          # Tasks are not concerned.
+          - patterns:
+              - pattern-either:
+                  - pattern: "$VARIABLE = $CALLABLE(...)"
+                  - pattern: "self.$VARIABLE = $CALLABLE(...)"
+              # A future class, a method of an event loop (`asyncio.get_event_loop().run_in_executor`), or a function of
+              # `asyncio`.
+              - metavariable-regex:
+                  metavariable: $CALLABLE
+                  regex: |-
+                    (?x)
+                    ^(?:
+                        (?:\w+\.)*(?:ThreadGroup)?Future
+                      | .+\.(?:create_future|run_in_executor)
+                      | (?:asyncio\.)?(?:ensure_future|run_coroutine_threadsafe|wrap_future)
+                    )$
+          # Started by a thread group: `x = thread_group.start(...)`, `x = self._thread_group.defer_start(...)`.
+          # The thread group is recognized by its name (`match.start(1)` is not a thread start).
+          - patterns:
+              - pattern-either:
+                  - pattern: "$VARIABLE = $GROUP.$METHOD(...)"
+                  - pattern: "self.$VARIABLE = $GROUP.$METHOD(...)"
+              - metavariable-regex:
+                  metavariable: $GROUP
+                  regex: '^(?:[\w.]*[._])?thread_group$'
+              - metavariable-regex:
+                  metavariable: $METHOD
+                  regex: '^(?:start|defer_start)$'
+          # Declared as a future: `x: ThreadGroupFuture[int]`, `x: Optional[asyncio.Future[int]]`.
+          - patterns:
+              - pattern-either:
+                  - pattern: "$VARIABLE: $TYPE"
+                  - pattern: "$VARIABLE: $TYPE = ..."
+                  - pattern: "self.$VARIABLE: $TYPE = ..."
+                  - pattern: |
+                      def $FUNCTION(..., $VARIABLE: $TYPE, ...):
+                          ...
+              # `SUBSCRIPT`: the type parameters, nested brackets included (`ThreadGroupFuture[Optional[int]]`).
+              - metavariable-regex:
+                  metavariable: $TYPE
+                  regex: |-
+                    (?x)
+                    (?(DEFINE)
+                        (?<SUBSCRIPT>
+                            \[(?:[^\[\]]|(?&SUBSCRIPT))*\]
+                        )
+                        (?<FUTURE_TYPE>
+                            (?:\w+\.)*(?:ThreadGroup)?Future(?&SUBSCRIPT)?
+                        )
+                    )
+                    ^(?:
+                        (?&FUTURE_TYPE)
+                      | Optional\[\s*(?&FUTURE_TYPE)\s*\]
+                      | Final\[\s*(?&FUTURE_TYPE)\s*\]
+                      | Union\[.*\b(?&FUTURE_TYPE)(?!\w).*\]
+                      | (?&FUTURE_TYPE)\s*\|\s*None
+                      | None\s*\|\s*(?&FUTURE_TYPE)
+                    )$
+      - focus-metavariable: $VARIABLE
+      - metavariable-regex:
+          metavariable: $VARIABLE
+          regex: '^(?!(?i:(?:\w*_)?future)$)\w+$'
