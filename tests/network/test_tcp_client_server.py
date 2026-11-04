@@ -32,6 +32,7 @@ from xcp_storage.network.socket import (
 )
 from xcp_storage.network.tcp_client import TcpClient, TcpClientError
 from xcp_storage.network.tcp_server import TcpServer, TcpServerError
+from xcp_storage.utils.contextlib import scoped_factory
 from xcp_storage.utils.time import Clock
 
 from xcp_storage.typing import (
@@ -82,15 +83,19 @@ def tcp_server(
 TcpClientFactory = Callable[[], TcpClient]
 
 @pytest.fixture
-def tcp_client_factory(tcp_server: TcpServer, client_ssl_context: Optional[ssl.SSLContext]) -> TcpClientFactory:
-    def factory() -> TcpClient:
+def tcp_client_factory(
+    tcp_server: TcpServer, client_ssl_context: Optional[ssl.SSLContext]
+) -> Generator[TcpClientFactory, None, None]:
+    def create() -> TcpClient:
         return TcpClient(
             tcp_server.address,
             tcp_server.port,
             client_timeout=CLIENT_TIMEOUT,
             ssl_context=client_ssl_context
         )
-    return factory
+
+    with scoped_factory(create, TcpClient.disconnect) as factory:
+        yield factory
 
 # ------------------------------------------------------------------------------
 
