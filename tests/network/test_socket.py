@@ -64,6 +64,42 @@ from xcp_storage.typing import (
 
 # ==============================================================================
 
+@pytest.fixture
+def mock_getaddrinfo() -> Iterator[MagicMock]:
+    with patch("socket.getaddrinfo", autospec=True) as mock_getaddrinfo:
+        yield mock_getaddrinfo
+
+@pytest.fixture
+def mock_socket_class() -> Iterator[MagicMock]:
+    with patch("socket.socket", autospec=True) as mock_socket_class:
+        yield mock_socket_class
+
+@pytest.fixture
+def mock_socketpair() -> Iterator[MagicMock]:
+    with patch("socket.socketpair", autospec=True) as mock_socketpair:
+        yield mock_socketpair
+
+@pytest.fixture
+def mock_sock() -> MagicMock:
+    mock_sock = MagicMock(spec=socket.socket)
+    mock_sock.fileno.return_value = 3 # An open socket.
+    return mock_sock
+
+@pytest.fixture
+def mock_ssl_sock() -> MagicMock:
+    mock_ssl_sock = MagicMock(spec=ssl.SSLSocket)
+    mock_ssl_sock.fileno.return_value = 4
+    mock_ssl_sock.pending.return_value = 0
+    return mock_ssl_sock
+
+@pytest.fixture
+def mock_select() -> Iterator[MagicMock]:
+    # Nothing is readable by default.
+    with patch("select.select", autospec=True, return_value=([], [], [])) as mock_select:
+        yield mock_select
+
+# ------------------------------------------------------------------------------
+
 class TestAddress:
     def test_get_ip_address_with_localhost(self) -> None:
         assert get_ip_address("127.0.0.1") == ipaddress.IPv4Address("127.0.0.1")
@@ -84,7 +120,6 @@ class TestAddress:
         with pytest.raises(SocketError, match="IP version mismatch"):
             get_ip_address(address, ip_version=ip_version)
 
-    @patch("socket.getaddrinfo")
     def test_get_ip_address_dns_resolution(self, mock_getaddrinfo: MagicMock) -> None:
         mock_getaddrinfo.return_value = [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("192.168.1.1", 80))]
         ip_address = get_ip_address("localhost", ip_version=4)
@@ -93,7 +128,6 @@ class TestAddress:
             "localhost", 80, socket.AF_INET, socket.SOCK_STREAM, socket.IPPROTO_TCP, socket.AI_ADDRCONFIG
         )
 
-    @patch("socket.getaddrinfo")
     def test_get_ip_address_errors(self, mock_getaddrinfo: MagicMock) -> None:
         with pytest.raises(SocketError, match="Unknown IP version."):
             get_ip_address("localhost", ip_version=67)
@@ -124,9 +158,10 @@ class TestAddress:
 
 CreateSocket = Callable[..., socket.socket]
 
+# ------------------------------------------------------------------------------
+
 UNUSED_UNIX_SOCKET_PATH: Final = PurePath("/unused")
 
-@patch("socket.socket")
 class TestSocketCreateErrors:
     SERVER_FACTORIES: Final[Dict[str, CreateSocket]] = {
         "tcp_server": lambda **kwargs: create_tcp_server_sock("127.0.0.1", 8888, **kwargs),
@@ -156,34 +191,18 @@ class TestSocketCreateErrors:
 
         mock_socket.close.assert_called_once()
 
-    @pytest.fixture
-    def timeout_error(self) -> Type[Exception]:
-        first, second = create_socket_pair()
-        with first, second, pytest.raises(OSError) as exc_info:
-            first.settimeout(0.01)
-            first.recv(1)
-        return type(exc_info.value)
-
-    @pytest.mark.parametrize(
-        "create_socket", list(CLIENT_FACTORIES.values()), ids=list(CLIENT_FACTORIES), indirect=True
-    )
-    def test_client_connect_timeout(
-        self,
-        mock_socket_class: MagicMock,
-        create_socket: CreateSocket,
-        timeout_error: Type[Exception]
-    ) -> None:
+    def test_tcp_client_connect_timeout(self, mock_socket_class: MagicMock) -> None:
         mock_socket = mock_socket_class.return_value
-        mock_socket.connect.side_effect = timeout_error()
+        mock_socket.connect.side_effect = socket.timeout()
 
         with pytest.raises(SocketTimeoutError):
-            create_socket(timeout=0.1)
+            # TCP only: a UNIX connection never times out.
+            self.CLIENT_FACTORIES["tcp_client"](timeout=0.1)
 
         mock_socket.close.assert_called_once()
 
 # ------------------------------------------------------------------------------
 
-@patch("socket.socket")
 class TestTcpSocketCreate:
     @pytest.mark.parametrize("reuse_address", (True, False))
     @pytest.mark.parametrize("keep_alive", (True, False))
@@ -313,37 +332,35 @@ class TestTcpSocketCreate:
     @pytest.mark.parametrize("bind", (True, False))
     def test_create_tcp_socket_with_tls_wrap_failure(self, mock_socket_class: MagicMock, *, bind: bool) -> None:
         mock_socket = mock_socket_class.return_value
-        ssl_context = MagicMock(spec=ssl.SSLContext)
-        ssl_context.wrap_socket.side_effect = ssl.SSLError(1, "Wrap failure.")
+        mock_ssl_context = MagicMock(spec=ssl.SSLContext)
+        mock_ssl_context.wrap_socket.side_effect = ssl.SSLError(1, "Wrap failure.")
 
         with pytest.raises(SocketError, match="Failed to wrap sock with TLS."):
             if bind:
-                create_tcp_server_sock("127.0.0.1", 8888, ssl_context=ssl_context)
+                create_tcp_server_sock("127.0.0.1", 8888, ssl_context=mock_ssl_context)
             else:
-                create_tcp_client_sock("127.0.0.1", 8888, ssl_context=ssl_context)
+                create_tcp_client_sock("127.0.0.1", 8888, ssl_context=mock_ssl_context)
 
         mock_socket.close.assert_called_once()
 
 # ------------------------------------------------------------------------------
 
 class TestSocketPairCreateErrors:
-    @patch("socket.socketpair")
     def test_socketpair_creation_failure(self, mock_socketpair: MagicMock) -> None:
         mock_socketpair.side_effect = OSError(errno.EMFILE, "Too many open files.")
         with pytest.raises(SocketError, match="Failed to create sock pair."):
             create_socket_pair()
 
-    @patch("socket.socketpair")
     def test_set_timeout_failure(self, mock_socketpair: MagicMock) -> None:
-        first, second = MagicMock(), MagicMock()
-        second.settimeout.side_effect = OSError(errno.EBADF, "Bad file descriptor.")
-        mock_socketpair.return_value = (first, second)
+        mock_first, mock_second = MagicMock(), MagicMock()
+        mock_second.settimeout.side_effect = OSError(errno.EBADF, "Bad file descriptor.")
+        mock_socketpair.return_value = (mock_first, mock_second)
 
         with pytest.raises(SocketError, match="Failed to set sock timeout."):
             create_socket_pair(timeout=1.0)
 
-        first.close.assert_called_once()
-        second.close.assert_called_once()
+        mock_first.close.assert_called_once()
+        mock_second.close.assert_called_once()
 
 # ------------------------------------------------------------------------------
 
@@ -365,7 +382,7 @@ class TestSocketInvalidArguments:
             socks.append(socket_class(*args, **kwargs))
             return socks[-1]
 
-        with patch("socket.socket", side_effect=create):
+        with patch("socket.socket", side_effect=create, autospec=True):
             yield socks
 
     @pytest.mark.parametrize("timeout", INVALID_TIMEOUTS)
@@ -395,7 +412,8 @@ class TestSocketInvalidArguments:
             socks.extend(socketpair())
             return socks[0], socks[1]
 
-        with patch("socket.socketpair", side_effect=create), pytest.raises(SocketError, match="Invalid sock timeout."):
+        with patch("socket.socketpair", side_effect=create, autospec=True), \
+                pytest.raises(SocketError, match="Invalid sock timeout."):
             create_socket_pair(timeout=timeout)
 
         assert len(socks) == 2
@@ -467,21 +485,6 @@ class TestSocketPort:
 
 # ------------------------------------------------------------------------------
 
-@pytest.fixture
-def mock_sock() -> MagicMock:
-    sock = MagicMock(spec=socket.socket)
-    sock.fileno.return_value = 3 # An open socket.
-    return sock
-
-@pytest.fixture
-def mock_ssl_sock() -> MagicMock:
-    sock = MagicMock(spec=ssl.SSLSocket)
-    sock.fileno.return_value = 4
-    sock.pending.return_value = 0
-    return sock
-
-# ------------------------------------------------------------------------------
-
 class TestSocketTransfer:
     MESSAGE: Final = b"hello world"
     MESSAGE_LEN: Final = len(MESSAGE)
@@ -493,7 +496,6 @@ class TestSocketTransfer:
         socket_send(mock_sock, self.MESSAGE)
         mock_sock.send.assert_called_once_with(memoryview(self.MESSAGE))
 
-    @patch("select.select")
     def test_socket_send_partial_and_retry(self, mock_select: MagicMock, mock_sock: MagicMock) -> None:
         mock_sock.send.side_effect = [
             self.MESSAGE_HALF_LEN_A,
@@ -550,7 +552,6 @@ class TestSocketTransfer:
         assert buffer == self.MESSAGE
         mock_sock.recv_into.assert_called_once_with(memoryview(buffer), self.MESSAGE_LEN)
 
-    @patch("select.select")
     def test_socket_receive_partial_and_retry(
         self, mock_select: MagicMock, mock_sock: MagicMock
     ) -> None:
@@ -608,7 +609,6 @@ class TestSocketTransferWouldBlock:
     MESSAGE: Final = b"Hey, listen!"
 
     @pytest.mark.parametrize("select_exception, fileno, error_type", SELECT_ERRORS)
-    @patch("select.select")
     def test_socket_send_would_block_then_select_fails(
         self,
         mock_select: MagicMock,
@@ -626,7 +626,6 @@ class TestSocketTransferWouldBlock:
         assert exc_info.type is error_type
 
     @pytest.mark.parametrize("select_exception, fileno, error_type", SELECT_ERRORS)
-    @patch("select.select")
     def test_socket_receive_would_block_then_select_fails(
         self,
         mock_select: MagicMock,
@@ -646,12 +645,6 @@ class TestSocketTransferWouldBlock:
 # ------------------------------------------------------------------------------
 
 class TestSocketWaitReadable:
-    @pytest.fixture
-    def mock_select(self) -> Iterator[MagicMock]:
-        # Nothing is readable by default.
-        with patch("select.select", return_value=([], [], [])) as mock_select:
-            yield mock_select
-
     def test_wait_readable(self, mock_select: MagicMock, mock_sock: MagicMock) -> None:
         timeout = 0.5
         assert not socket_wait_readable(mock_sock, timeout=timeout)
@@ -691,7 +684,6 @@ class TestSocketWaitReadable:
 # ------------------------------------------------------------------------------
 
 class TestUnixSocket:
-    @patch("socket.socket")
     def test_unix_client_server_is_busy(self, mock_socket_class: MagicMock, unix_socket_path: Path) -> None:
         # The listen queue of the server is full.
         mock_socket = mock_socket_class.return_value
