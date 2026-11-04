@@ -221,6 +221,7 @@ banned-from = [
     "logging",
     "logging.handlers",
     "multiprocessing",
+    "multiprocessing.process",
     "multiprocessing.synchronize",
     "os",
     "pytest",

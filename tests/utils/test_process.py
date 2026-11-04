@@ -25,18 +25,6 @@ from xcp_storage.typing import Final
 
 # ==============================================================================
 
-class TestRunCommandWithTimeout:
-    def test_timeout(self) -> None:
-        with pytest.raises(CommandError) as exc_info:
-            run_command(["/usr/bin/sleep", "10"], timeout=0.2)
-        assert exc_info.value.code is None
-        assert "timed out" in exc_info.value.reason
-
-    def test_success_within_timeout(self) -> None:
-        assert run_command(["/usr/bin/echo", "hello"], timeout=10.0) == "hello\n"
-
-# ------------------------------------------------------------------------------
-
 @patch.object(Path, "read_bytes")
 class TestGetProcessCmdline:
     PID: Final = 67
@@ -64,3 +52,15 @@ class TestGetProcessCmdline:
             f"Unable to get command line of PID `{self.PID}`: "
             f"`[Errno 2] No such file or directory: '{cmdline_path}'`."
         ) in caplog.text
+
+# ------------------------------------------------------------------------------
+
+class TestRunCommandWithTimeout:
+    def test_timeout(self) -> None:
+        with pytest.raises(CommandError) as exc_info:
+            run_command(["/usr/bin/sleep", "10"], timeout=0.2)
+        assert exc_info.value.code is None
+        assert "timed out" in exc_info.value.reason
+
+    def test_success_within_timeout(self) -> None:
+        assert run_command(["/usr/bin/echo", "hello"], timeout=10.0) == "hello\n"
