@@ -23,49 +23,49 @@ from xcp_storage.utils.sync import wait_for_condition
 @patch("time.sleep", autospec=True)
 class TestWaitForCondition:
     def test_success(self, mock_sleep: MagicMock) -> None:
-        function = Mock(return_value=True)
-        assert wait_for_condition(function, timeout=5.0, interval=0.1)
-        function.assert_called_once()
+        mock_function = Mock(return_value=True)
+        assert wait_for_condition(mock_function, timeout=5.0, interval=0.1)
+        mock_function.assert_called_once()
         mock_sleep.assert_not_called()
 
     def test_success_after_retries(self, mock_sleep: MagicMock) -> None:
-        function = Mock(side_effect=[False, False, True])
-        assert wait_for_condition(function, timeout=5.0, interval=0.5)
-        assert function.call_count == 3
+        mock_function = Mock(side_effect=[False, False, True])
+        assert wait_for_condition(mock_function, timeout=5.0, interval=0.5)
+        assert mock_function.call_count == 3
         assert mock_sleep.call_count == 2
         mock_sleep.assert_called_with(0.5)
 
     def test_no_timeout(self, mock_sleep: MagicMock) -> None:
-        function = Mock(return_value=False)
-        assert not wait_for_condition(function, timeout=0, interval=0)
-        function.assert_called_once()
+        mock_function = Mock(return_value=False)
+        assert not wait_for_condition(mock_function, timeout=0, interval=0)
+        mock_function.assert_called_once()
         mock_sleep.assert_not_called()
 
     def test_negative_timeout(self, mock_sleep: MagicMock) -> None:
-        function = Mock(return_value=False)
-        assert not wait_for_condition(function, timeout=-1.0, interval=1.0)
-        function.assert_called_once()
+        mock_function = Mock(return_value=False)
+        assert not wait_for_condition(mock_function, timeout=-1.0, interval=1.0)
+        mock_function.assert_called_once()
         mock_sleep.assert_not_called()
 
     @patch("time.monotonic", autospec=True)
     def test_timeout_reached(self, mock_time: MagicMock, mock_sleep: MagicMock) -> None:
         mock_time.side_effect = [0.0, 2.5, 5.0, 5.0, 5.0]
-        function = Mock(return_value=False)
-        assert not wait_for_condition(function, timeout=5.0, interval=1.0)
-        assert function.call_count == 2
+        mock_function = Mock(return_value=False)
+        assert not wait_for_condition(mock_function, timeout=5.0, interval=1.0)
+        assert mock_function.call_count == 2
         assert mock_sleep.call_count == 1
         mock_sleep.assert_called_with(1.0)
 
     @patch("time.monotonic", autospec=True)
     def test_sleep_is_capped_by_remaining_time(self, mock_time: MagicMock, mock_sleep: MagicMock) -> None:
         mock_time.side_effect = [0.0, 4.5, 5.0, 5.0, 5.0]
-        function = Mock(return_value=False)
-        assert not wait_for_condition(function, timeout=5.0, interval=10.0)
+        mock_function = Mock(return_value=False)
+        assert not wait_for_condition(mock_function, timeout=5.0, interval=10.0)
         mock_sleep.assert_called_once_with(0.5)
 
     def test_exception_is_propagated(self, mock_sleep: MagicMock) -> None:
         exception_message = "Explosion!"
-        function = Mock(side_effect=Exception(exception_message))
+        mock_function = Mock(side_effect=Exception(exception_message))
         with pytest.raises(Exception, match=exception_message):
-            wait_for_condition(function, timeout=5.0, interval=1.0)
+            wait_for_condition(mock_function, timeout=5.0, interval=1.0)
         mock_sleep.assert_not_called()
