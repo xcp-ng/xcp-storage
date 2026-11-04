@@ -1,0 +1,38 @@
+rules:
+  - id: python-enforce-simple-patch-in-test
+    languages: [python]
+    severity: WARNING
+    message: "Patch in the body of `$TEST` is restricted for a few set of external external functions, patch anything else in a fixture that yields the mock."
+    patterns:
+      # In a test (function or method), nested functions included; fixtures are not concerned.
+      - pattern-inside: |
+          def $TEST(...):
+              ...
+      - pattern-either:
+          # Allowed form only: an allowed external function (patched for the whole process, so each one is reviewed), as a
+          # plain string.
+          - patterns:
+              - pattern: "unittest.mock.patch($TARGET, ...)"
+              - metavariable-regex:
+                  metavariable: $TARGET
+                  regex: |-
+                    (?x)
+                    ^(?!["'](?:
+                        fcntl\.flock
+                      | os\.close
+                      | socket\.socketpair
+                      | time\.monotonic
+                      | time\.sleep
+                    )["']$)
+          - pattern: "unittest.mock.patch.multiple(...)"
+          - pattern: "unittest.mock.patch.dict(...)"
+          - patterns:
+              - pattern-inside: |
+                  import $NAME
+                  ...
+              - pattern-either:
+                  - pattern: "unittest.mock.patch.object($NAME, ...)"
+                  - pattern: "unittest.mock.patch.object($NAME.$ATTRIBUTE, ...)"
+      - metavariable-regex:
+          metavariable: $TEST
+          regex: '^test'
