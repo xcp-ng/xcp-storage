@@ -1,0 +1,34 @@
+rules:
+  - id: python-enforce-mock-variable-prefix
+    languages: [python]
+    severity: WARNING
+    message: "Mock variable `$VARIABLE` must use `mock_` prefix."
+    patterns:
+      - pattern-either:
+          # Patch used as a context manager.
+          - pattern: |
+              with unittest.mock.patch(...) as $VARIABLE:
+                  ...
+          - pattern: |
+              with unittest.mock.patch.object(...) as $VARIABLE:
+                  ...
+          # Patch started by hand, or entered in an `ExitStack`.
+          - pattern: "$VARIABLE = unittest.mock.patch(...).start()"
+          - pattern: "$VARIABLE = unittest.mock.patch.object(...).start()"
+          - pattern: "$VARIABLE = $STACK.enter_context(unittest.mock.patch(...))"
+          - pattern: "$VARIABLE = $STACK.enter_context(unittest.mock.patch.object(...))"
+          # Mock created directly.
+          - patterns:
+              - pattern: "$VARIABLE = unittest.mock.$MOCK(...)"
+              - metavariable-regex:
+                  metavariable: $MOCK
+                  regex: '^(?:(?:NonCallable)?(?:Magic)?Mock|AsyncMock|create_autospec)$'
+      # A spy (`wraps=`) runs the real code: see `python-enforce-spy-variable-prefix`.
+      - pattern-not: |
+          with <... $FUNCTION(..., wraps=$WRAPPED, ...) ...> as $VARIABLE:
+              ...
+      - pattern-not: "$VARIABLE = <... $FUNCTION(..., wraps=$WRAPPED, ...) ...>"
+      - focus-metavariable: $VARIABLE
+      - metavariable-regex:
+          metavariable: $VARIABLE
+          regex: '^(?!mock_)\w+$'
