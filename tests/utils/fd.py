@@ -16,10 +16,14 @@ import contextlib
 import gc
 import os
 from pathlib import PurePath
+import resource
+
+import pytest
 
 from xcp_storage.config.platform import PROC_DIR_PATH
+from xcp_storage.utils.file import close_fd
 
-from xcp_storage.typing import Final, Iterator
+from xcp_storage.typing import Final, Iterator, List
 
 # ==============================================================================
 
@@ -56,3 +60,32 @@ def assert_no_fd_leak() -> Iterator[None]:
 
     gc.collect()
     assert count_process_fds() == fd_count
+
+@contextlib.contextmanager
+def occupied_low_fds(limit: int) -> Iterator[None]:
+    """
+    Occupy all the free descriptors below `limit`: the next ones opened by the process are `>= limit`.
+    Skips the test if the process cannot open enough descriptors.
+    """
+
+    soft_limit, hard_limit = resource.getrlimit(resource.RLIMIT_NOFILE)
+
+    free_count = 64 # Leave extra space beyond the limit.
+
+    required_limit = limit + free_count
+    if hard_limit != resource.RLIM_INFINITY and hard_limit < required_limit:
+        pytest.skip(f"At least {required_limit} file descriptors are required.")
+
+    resource.setrlimit(resource.RLIMIT_NOFILE, (max(soft_limit, required_limit), hard_limit))
+    fds: List[int] = []
+    try:
+        fd = os.open(os.devnull, os.O_RDONLY | os.O_CLOEXEC)
+        fds.append(fd)
+        while fd < limit - 1:
+            fd = os.dup(fds[0])
+            fds.append(fd)
+        yield
+    finally:
+        for fd in fds:
+            close_fd(fd)
+        resource.setrlimit(resource.RLIMIT_NOFILE, (soft_limit, hard_limit))
