@@ -166,23 +166,27 @@ class TestLinstorControllerGetAddresses:
 # ------------------------------------------------------------------------------
 
 class TestLinstorControllerGetUri:
+    LOCAL_ADDRESS: Final = "10.10.0.12:3366"
+    PEER_ADDRESS: Final = "10.10.0.13"
+    IPV6_PEER_ADDRESS: Final = "[fe80::2]"
+    PEER_PORT: Final = 51234
+
     @pytest.fixture
-    def mock_get_addresses(self) -> Iterator[MagicMock]:
-        with patch.object(LinstorController, "get_addresses", autospec=True) as mock_get_addresses:
-            yield mock_get_addresses
+    def mock_run_command(self) -> Iterator[MagicMock]:
+        with patch(f"{_LINSTOR_CONTROLLER_MODULE}.run_command", autospec=True) as mock_run_command:
+            yield mock_run_command
 
-    def test_no_address(self, mock_get_addresses: MagicMock) -> None:
-        mock_get_addresses.return_value = []
-        assert LinstorController.get_uri() == ""
+    @classmethod
+    def get_ss_output(cls, *peer_addresses: str) -> str:
+        # Columns of `ss -tnH state established`: receive queue, send queue, local address, peer address.
+        return "".join(f"0 0 {cls.LOCAL_ADDRESS} {address}:{cls.PEER_PORT}\n" for address in peer_addresses)
 
-    def test_one_address(self, mock_get_addresses: MagicMock) -> None:
-        mock_get_addresses.return_value = ["10.10.0.13"]
-        assert LinstorController.get_uri() == "linstor://10.10.0.13"
-
-    def test_two_addresses(self, mock_get_addresses: MagicMock) -> None:
-        mock_get_addresses.return_value = ["10.10.0.13", "10.10.0.14"]
-        assert LinstorController.get_uri() == "linstor://10.10.0.13"
-
-    def test_ipv6_address(self, mock_get_addresses: MagicMock) -> None:
-        mock_get_addresses.return_value = ["[fe80::2]"]
-        assert LinstorController.get_uri() == "linstor://[fe80::2]"
+    @pytest.mark.parametrize("peer_addresses, expected_uri", [
+        ((), ""),
+        ((PEER_ADDRESS,), f"linstor://{PEER_ADDRESS}"),
+        ((PEER_ADDRESS, "10.10.0.14"), f"linstor://{PEER_ADDRESS}"),
+        ((IPV6_PEER_ADDRESS,), f"linstor://{IPV6_PEER_ADDRESS}")
+    ])
+    def test_get_uri(self, mock_run_command: MagicMock, peer_addresses: Tuple[str, ...], expected_uri: str) -> None:
+        mock_run_command.return_value = self.get_ss_output(*peer_addresses)
+        assert LinstorController.get_uri() == expected_uri
