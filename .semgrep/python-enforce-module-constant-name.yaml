@@ -1,0 +1,20 @@
+rules:
+  - id: python-enforce-module-constant-name
+    languages: [python]
+    severity: WARNING
+    message: "Module constant `$VARIABLE` assigned from `__module__` must be named `_<NAME>_MODULE`."
+    patterns:
+      # Assigned the module of an object: `_DRBD_MODULE = Drbd.__module__`.
+      # Also matches annotated assignments (`x: T = ...`).
+      - pattern: "$VARIABLE = $OBJECT.__module__"
+      # Module level only: a function or a class may read `__module__` under another name.
+      - pattern-not-inside: |
+          def $FUNCTION(...):
+              ...
+      - pattern-not-inside: |
+          class $CLASS:
+              ...
+      - focus-metavariable: $VARIABLE
+      - metavariable-regex:
+          metavariable: $VARIABLE
+          regex: '^(?!_[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)*_MODULE$)\w+$'

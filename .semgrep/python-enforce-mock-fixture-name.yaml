@@ -1,0 +1,19 @@
+rules:
+  - id: python-enforce-mock-fixture-name
+    languages: [python]
+    severity: WARNING
+    message: "Fixture `$FIXTURE` provides the mock `$VARIABLE`: both must have the same name."
+    patterns:
+      - pattern-inside: |
+          @pytest.fixture(...)
+          def $FIXTURE(...):
+              ...
+      - pattern-either:
+          - pattern: "yield $VARIABLE"
+          - pattern: "return $VARIABLE"
+      # A mock or a spy: `python-enforce-mock-variable-prefix` and `python-enforce-spy-variable-prefix` name them.
+      - metavariable-regex:
+          metavariable: $VARIABLE
+          regex: '^(?:mock|spy)_\w+$'
+      - metavariable-comparison:
+          comparison: str($FIXTURE) != str($VARIABLE)
