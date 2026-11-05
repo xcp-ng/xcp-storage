@@ -32,6 +32,7 @@ from xcp_storage.network.socket import (
 )
 from xcp_storage.network.tcp_client import TcpClient, TcpClientError
 from xcp_storage.network.tcp_server import TcpServer, TcpServerError
+from xcp_storage.utils.asyncio import close_stream_writer
 from xcp_storage.utils.contextlib import scoped_factory
 from xcp_storage.utils.time import Clock
 
@@ -45,6 +46,10 @@ from xcp_storage.typing import (
 )
 
 # ==============================================================================
+
+_ASYNCIO_MODULE: Final = close_stream_writer.__module__
+
+# ------------------------------------------------------------------------------
 
 SERVER_STARTUP_TIMEOUT: Final = 5.0
 SERVER_SHUTDOWN_TIMEOUT: Final = 5.0
@@ -444,7 +449,7 @@ class TestTcpClientServer:
 
     @pytest.fixture
     def short_tls_shutdown_timeout(self) -> Iterator[None]:
-        with patch("xcp_storage.utils.asyncio._TLS_SHUTDOWN_TIMEOUT", TLS_SHUTDOWN_TIMEOUT):
+        with patch(f"{_ASYNCIO_MODULE}._TLS_SHUTDOWN_TIMEOUT", TLS_SHUTDOWN_TIMEOUT):
             yield
 
     @pytest.mark.parametrize("tcp_server", [RejectConnectionServer], indirect=True)

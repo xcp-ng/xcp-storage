@@ -24,7 +24,7 @@ import pytest
 
 from xcp_storage.config.platform import RUNTIME_DIR_PATH
 from xcp_storage.utils.process import CommandError, run_command
-from xcp_storage.utils.service import _EXEC_PATH_SYSTEMCTL
+from xcp_storage.utils.service import _EXEC_PATH_SYSTEMCTL, reload_service_conf
 
 from xcp_storage.typing import (
     Final,
@@ -43,6 +43,10 @@ from xcp_storage.typing import (
 # a fallback is used when no config is found and if the tests are executed in
 # a root context.
 # ==============================================================================
+
+_SERVICE_MODULE: Final = reload_service_conf.__module__
+
+# ------------------------------------------------------------------------------
 
 # Directories of the runtime units, relative to the runtime directory of the manager.
 _SYSTEM_RUNTIME_UNIT_DIR_PATH: Final = PurePath("systemd/system")
@@ -239,5 +243,5 @@ def service_manager(tmp_path: Path) -> Iterator[ServiceManager]:
     wrapper_path.write_text(f'#!/bin/sh\nexec "{_EXEC_PATH_SYSTEMCTL}" {manager_option} "$@"\n')
     wrapper_path.chmod(0o700)
 
-    with patch("xcp_storage.utils.service._EXEC_PATH_SYSTEMCTL", str(wrapper_path)):
+    with patch(f"{_SERVICE_MODULE}._EXEC_PATH_SYSTEMCTL", str(wrapper_path)):
         yield service_manager

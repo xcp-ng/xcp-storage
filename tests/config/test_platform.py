@@ -23,6 +23,10 @@ from xcp_storage.typing import Final, Iterator, Tuple
 
 # ==============================================================================
 
+_PLATFORM_MODULE: Final = get_os_ids.__module__
+
+# ------------------------------------------------------------------------------
+
 @pytest.fixture(autouse=True)
 def clear_os_ids_cache() -> Iterator[None]:
     get_os_ids.cache_clear()
@@ -32,7 +36,7 @@ def clear_os_ids_cache() -> Iterator[None]:
 @pytest.fixture
 def os_release_path(tmp_path: Path) -> Iterator[Path]:
     path = tmp_path / "os-release"
-    with patch("xcp_storage.config.platform._OS_RELEASE_PATH", path):
+    with patch(f"{_PLATFORM_MODULE}._OS_RELEASE_PATH", path):
         yield path
 
 # ------------------------------------------------------------------------------

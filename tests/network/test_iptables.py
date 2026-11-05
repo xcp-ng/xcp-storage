@@ -50,9 +50,13 @@ P = ParamSpec("P")
 
 # ==============================================================================
 
+_IPTABLES_MODULE: Final = update_iptables_tcp_port.__module__
+
+# ------------------------------------------------------------------------------
+
 @pytest.fixture
 def mock_run_command() -> Iterator[MagicMock]:
-    with patch("xcp_storage.network.iptables.run_command", autospec=True) as mock_run_command:
+    with patch(f"{_IPTABLES_MODULE}.run_command", autospec=True) as mock_run_command:
         yield mock_run_command
 
 # ------------------------------------------------------------------------------
