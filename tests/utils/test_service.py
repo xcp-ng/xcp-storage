@@ -17,6 +17,8 @@ from unittest.mock import (
     patch,
 )
 
+import pytest
+
 from xcp_storage.utils.service import (
     _EXEC_PATH_SYSTEMCTL,
     disable_and_stop_service,
@@ -31,9 +33,16 @@ from xcp_storage.utils.service import (
     try_restart_service,
 )
 
-from xcp_storage.typing import Final, List
+from xcp_storage.typing import Final, Iterator, List
 
 # ==============================================================================
+
+@pytest.fixture
+def mock_run_command() -> Iterator[MagicMock]:
+    with patch("xcp_storage.utils.service.run_command", autospec=True) as mock_run_command:
+        yield mock_run_command
+
+# ------------------------------------------------------------------------------
 
 def test_escape_service_instance() -> None:
     assert escape_service_instance("target") == "target"
@@ -41,7 +50,6 @@ def test_escape_service_instance() -> None:
 
 # ------------------------------------------------------------------------------
 
-@patch("xcp_storage.utils.service.run_command")
 class TestService:
     SERVICE_NAME: Final = "target"
 

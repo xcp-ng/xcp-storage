@@ -37,6 +37,7 @@ from xcp_storage.typing import (
     Callable,
     cast,
     Final,
+    Iterator,
     List,
     NamedTuple,
     Optional,
@@ -48,6 +49,13 @@ from xcp_storage.typing import (
 P = ParamSpec("P")
 
 # ==============================================================================
+
+@pytest.fixture
+def mock_run_command() -> Iterator[MagicMock]:
+    with patch("xcp_storage.network.iptables.run_command", autospec=True) as mock_run_command:
+        yield mock_run_command
+
+# ------------------------------------------------------------------------------
 
 def get_return_rule(chain: str = DEFAULT_FIREWALL_INPUT_CHAIN) -> List[str]:
     return [chain, "-j", "RETURN"]
@@ -182,7 +190,6 @@ def run_command_side_effect_factory(
 
 # ------------------------------------------------------------------------------
 
-@patch("xcp_storage.network.iptables.run_command")
 @pytest.mark.parametrize("spec", TEST_SPECS)
 class TestIptablesTcpPort:
     def test_open_port_without_existing_chain(self, mock_run_command: MagicMock, spec: PortUpdateSpec) -> None:
@@ -336,7 +343,6 @@ def run_fail_command_side_effect_factory(
 
 # ------------------------------------------------------------------------------
 
-@patch("xcp_storage.network.iptables.run_command")
 @pytest.mark.parametrize("spec", TEST_SPECS)
 class TestIptablesTcpPortErrors:
     def test_open_port_create_chain_fatal_code(self, mock_run_command: MagicMock, spec: PortUpdateSpec) -> None:

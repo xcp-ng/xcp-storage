@@ -13,18 +13,25 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 import contextlib
+import gc
 import os
 from pathlib import PurePath
 
 from xcp_storage.config.platform import PROC_DIR_PATH
 
-from xcp_storage.typing import Final
+from xcp_storage.typing import Final, Iterator
 
 # ==============================================================================
 
 _FD_SELF_DIR_PATH: Final = PROC_DIR_PATH / "self" / "fd"
 
 # ------------------------------------------------------------------------------
+
+def count_process_fds() -> int:
+    """
+    Return the number of descriptors opened by this process.
+    """
+    return len(list(_FD_SELF_DIR_PATH.iterdir()))
 
 def count_open_fds(path: PurePath) -> int:
     """
@@ -35,3 +42,17 @@ def count_open_fds(path: PurePath) -> int:
         with contextlib.suppress(OSError):
             count += os.readlink(fd_path) == str(path)
     return count
+
+@contextlib.contextmanager
+def assert_no_fd_leak() -> Iterator[None]:
+    """
+    Check that this process has as many descriptors opened before and after `yield`.
+    """
+
+    gc.collect()
+    fd_count = count_process_fds()
+
+    yield
+
+    gc.collect()
+    assert count_process_fds() == fd_count

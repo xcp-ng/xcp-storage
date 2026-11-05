@@ -41,6 +41,6 @@ class TestCloseFd:
 
     @pytest.mark.parametrize("error_code", [errno.EBADF, errno.EIO, errno.EINTR])
     def test_error_is_ignored(self, error_code: int) -> None:
-        with patch("xcp_storage.utils.file.os.close", side_effect=OSError(error_code)) as mock_close:
+        with patch("os.close", side_effect=OSError(error_code), autospec=True) as mock_close:
             close_fd(42)
         mock_close.assert_called_once_with(42)

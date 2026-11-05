@@ -158,7 +158,7 @@ _CODE_TO_ERROR_TYPE: Final = {
 class JsonRpcObject(ABC):
     @abstractmethod
     def to_json(self) -> str:
-        pass
+        pass # pragma: no cover
 
 # ------------------------------------------------------------------------------
 # Request.

@@ -40,34 +40,34 @@ class Protocol(ABC):
     class Packet(ABC):
         @abstractmethod
         def encode(self) -> bytes:
-            pass
+            pass # pragma: no cover
 
         @property
         @abstractmethod
         def message_type(self) -> "Protocol.MessageType":
-            pass
+            pass # pragma: no cover
 
         @property
         @abstractmethod
         def seq(self) -> int:
-            pass
+            pass # pragma: no cover
 
         @property
         @abstractmethod
         def payload(self) -> bytes:
-            pass
+            pass # pragma: no cover
 
     @abstractmethod
     def create_packet(self, message_type: MessageType, seq: int, payload: Optional[bytes] = None) -> Packet:
-        pass
+        pass # pragma: no cover
 
     @abstractmethod
     def receive_packet(self, sock: socket.socket, message_types: Sequence[MessageType]) -> Packet:
-        pass
+        pass # pragma: no cover
 
     @abstractmethod
     def send_packet(self, sock: socket.socket, packet: Packet) -> None:
-        pass
+        pass # pragma: no cover
 
     @abstractmethod
     async def receive_packet_async(
@@ -75,7 +75,7 @@ class Protocol(ABC):
         stream_reader: asyncio.StreamReader,
         message_types: Sequence[MessageType]
     ) -> Packet:
-        pass
+        pass # pragma: no cover
 
     @abstractmethod
     async def send_packet_async(
@@ -83,8 +83,8 @@ class Protocol(ABC):
         stream_writer: asyncio.StreamWriter,
         packet: Packet
     ) -> None:
-        pass
+        pass # pragma: no cover
 
     @abstractmethod
     def get_next_packet_seq(self, seq: int) -> int:
-        pass
+        pass # pragma: no cover

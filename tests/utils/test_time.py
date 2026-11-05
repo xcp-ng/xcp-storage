@@ -18,7 +18,7 @@ from xcp_storage.utils.time import Clock, Timer
 
 # ==============================================================================
 
-@patch("time.monotonic")
+@patch("time.monotonic", autospec=True)
 class TestClock:
     def test_elapsed_time(self, mock_time: MagicMock) -> None:
         mock_time.side_effect = [10.0, 12.5, 15.0]
@@ -32,7 +32,7 @@ class TestClock:
         clock.start()
         assert clock.elapsed_time == 2.5
 
-@patch("time.monotonic")
+@patch("time.monotonic", autospec=True)
 class TestTimer:
     def test_remaining_time(self, mock_time: MagicMock) -> None:
         mock_time.side_effect = [10.0, 12.5, 15.0, 20.0]

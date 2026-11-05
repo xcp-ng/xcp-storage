@@ -12,39 +12,28 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-from unittest.mock import (
-    MagicMock,
-    patch,
-)
-
 import pytest
 
+from tests.backends.linstor import LinstorServiceSpec, LinstorServiceTests
 from xcp_storage.backends.linstor.satellite import _SERVICE_LINSTOR_SATELLITE, LinstorSatellite
 
 from xcp_storage.typing import Final
 
 # ==============================================================================
 
-MODULE_NAME: Final = "xcp_storage.backends.linstor.satellite"
+_LINSTOR_SATELLITE_SERVICE_SPEC: Final = LinstorServiceSpec(
+    LinstorSatellite,
+    _SERVICE_LINSTOR_SATELLITE,
+    ("enable_and_start", "disable_and_stop")
+)
 
 # ------------------------------------------------------------------------------
 
-class TestLinstorSatelliteService:
-    @patch(f"{MODULE_NAME}.is_service_active", return_value=True)
-    def test_running(self, mock_is_service_active: MagicMock) -> None:
-        assert LinstorSatellite.is_running()
-        mock_is_service_active.assert_called_once_with(_SERVICE_LINSTOR_SATELLITE)
+class TestLinstorSatelliteService(LinstorServiceTests):
+    @pytest.fixture
+    def linstor_service_spec(self) -> LinstorServiceSpec:
+        return _LINSTOR_SATELLITE_SERVICE_SPEC
 
-    @patch(f"{MODULE_NAME}.is_service_active", return_value=False)
-    def test_not_running(self, mock_is_service_active: MagicMock) -> None:
-        assert not LinstorSatellite.is_running()
-        mock_is_service_active.assert_called_once_with(_SERVICE_LINSTOR_SATELLITE)
-
-    @pytest.mark.parametrize("service_name, function_name", [
-        ("enable_and_start", "enable_and_start_service"),
-        ("disable_and_stop", "disable_and_stop_service")
-    ])
-    def test_service_command(self, service_name: str, function_name: str) -> None:
-        with patch(f"{MODULE_NAME}.{function_name}") as mock_function_name:
-            getattr(LinstorSatellite, service_name)()
-        mock_function_name.assert_called_once_with(_SERVICE_LINSTOR_SATELLITE)
+    @pytest.fixture(params=_LINSTOR_SATELLITE_SERVICE_SPEC.commands)
+    def command(self, request: pytest.FixtureRequest) -> str:
+        return request.param

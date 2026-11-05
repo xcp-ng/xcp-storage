@@ -20,6 +20,7 @@ from unittest.mock import (
 
 import pytest
 
+from tests.backends.linstor import LinstorServiceSpec, LinstorServiceTests
 from xcp_storage.backends.linstor.controller import _SERVICE_LINSTOR_CONTROLLER, LinstorController
 from xcp_storage.network.socket import (
     create_tcp_client_sock,
@@ -40,7 +41,22 @@ from xcp_storage.typing import (
 
 # ==============================================================================
 
-MODULE_NAME: Final = "xcp_storage.backends.linstor.controller"
+_LINSTOR_CONTROLLER_MODULE: Final = LinstorController.__module__
+
+_LINSTOR_CONTROLLER_SERVICE_SPEC: Final = LinstorServiceSpec(
+    LinstorController, _SERVICE_LINSTOR_CONTROLLER, ("start", "stop", "restart")
+)
+
+# ------------------------------------------------------------------------------
+
+class TestLinstorControllerService(LinstorServiceTests):
+    @pytest.fixture
+    def linstor_service_spec(self) -> LinstorServiceSpec:
+        return _LINSTOR_CONTROLLER_SERVICE_SPEC
+
+    @pytest.fixture(params=_LINSTOR_CONTROLLER_SERVICE_SPEC.commands)
+    def command(self, request: pytest.FixtureRequest) -> str:
+        return request.param
 
 # ------------------------------------------------------------------------------
 
@@ -57,13 +73,24 @@ class TestLinstorControllerGetAddresses:
 
     ListenFunction = Callable[..., Socket]
     ConnectFunction = Callable[..., Tuple[Socket, Socket]]
-    PatchListenerPortFunction = Callable[[Socket], "contextlib.AbstractContextManager[None]"]
+    MockListenerPortFunction = Callable[[Socket], "contextlib.AbstractContextManager[None]"]
 
     @staticmethod
     @contextlib.contextmanager
-    def patch_satellite_ports(plain_port: Optional[int], ssl_port: Optional[int]) -> Iterator[None]:
-        with patch.multiple(MODULE_NAME, LINSTOR_SATELLITE_PORT_PLAIN=plain_port, LINSTOR_SATELLITE_PORT_SSL=ssl_port):
+    def mock_satellite_ports(plain_port: Optional[int], ssl_port: Optional[int]) -> Iterator[None]:
+        with patch.multiple(
+            _LINSTOR_CONTROLLER_MODULE, LINSTOR_SATELLITE_PORT_PLAIN=plain_port, LINSTOR_SATELLITE_PORT_SSL=ssl_port
+        ):
             yield
+
+    @pytest.fixture(params=["plain", "ssl"])
+    def mock_listener_port(self, request: pytest.FixtureRequest, listen: ListenFunction) -> MockListenerPortFunction:
+        unused_port = listen().port
+
+        def impl(listener: Socket) -> "contextlib.AbstractContextManager[None]":
+            ports = (listener.port, unused_port)
+            return self.mock_satellite_ports(*(ports if request.param == "plain" else reversed(ports)))
+        return impl
 
     @pytest.fixture(params=[IPV4, IPV6], ids=["ipv4", "ipv6"])
     def loopback_spec(self, request: pytest.FixtureRequest) -> LoopbackSpec:
@@ -99,19 +126,10 @@ class TestLinstorControllerGetAddresses:
             return client, sockets.enter_context(Socket(accepted))
         return impl
 
-    @pytest.fixture(params=["plain", "ssl"])
-    def patch_listener_port(self, request: pytest.FixtureRequest, listen: ListenFunction) -> PatchListenerPortFunction:
-        unused_port = listen().port
-
-        def impl(listener: Socket) -> "contextlib.AbstractContextManager[None]":
-            ports = (listener.port, unused_port)
-            return self.patch_satellite_ports(*(ports if request.param == "plain" else reversed(ports)))
-        return impl
-
     def test_no_connection(self, listen: ListenFunction, loopback_spec: LoopbackSpec) -> None:
         listener = listen(loopback_spec.listener_address)
 
-        with self.patch_satellite_ports(listener.port, listener.port):
+        with self.mock_satellite_ports(listener.port, listener.port):
             assert LinstorController.get_addresses() == []
             assert LinstorController.get_uri() == ""
 
@@ -119,7 +137,7 @@ class TestLinstorControllerGetAddresses:
         self,
         listen: ListenFunction,
         connect: ConnectFunction,
-        patch_listener_port: PatchListenerPortFunction,
+        mock_listener_port: MockListenerPortFunction,
         loopback_spec: LoopbackSpec
     ) -> None:
         listener = listen(loopback_spec.listener_address)
@@ -128,27 +146,31 @@ class TestLinstorControllerGetAddresses:
         accepted.close()
         client.close()
 
-        with patch_listener_port(listener):
+        with mock_listener_port(listener):
             assert LinstorController.get_addresses() == []
 
     def test_established_connection(
         self,
         listen: ListenFunction,
         connect: ConnectFunction,
-        patch_listener_port: PatchListenerPortFunction,
+        mock_listener_port: MockListenerPortFunction,
         loopback_spec: LoopbackSpec
     ) -> None:
         listener = listen(loopback_spec.listener_address)
         connect(listener, loopback_spec.client_address)
 
-        with patch_listener_port(listener):
+        with mock_listener_port(listener):
             assert LinstorController.get_addresses() == [loopback_spec.uri_client_address]
             assert LinstorController.get_uri() == f"linstor://{loopback_spec.uri_client_address}"
 
 # ------------------------------------------------------------------------------
 
-@patch(f"{MODULE_NAME}.LinstorController.get_addresses")
 class TestLinstorControllerGetUri:
+    @pytest.fixture
+    def mock_get_addresses(self) -> Iterator[MagicMock]:
+        with patch.object(LinstorController, "get_addresses", autospec=True) as mock_get_addresses:
+            yield mock_get_addresses
+
     def test_no_address(self, mock_get_addresses: MagicMock) -> None:
         mock_get_addresses.return_value = []
         assert LinstorController.get_uri() == ""
@@ -164,26 +186,3 @@ class TestLinstorControllerGetUri:
     def test_ipv6_address(self, mock_get_addresses: MagicMock) -> None:
         mock_get_addresses.return_value = ["[fe80::2]"]
         assert LinstorController.get_uri() == "linstor://[fe80::2]"
-
-# ------------------------------------------------------------------------------
-
-class TestLinstorControllerService:
-    @patch(f"{MODULE_NAME}.is_service_active", return_value=True)
-    def test_running(self, mock_is_service_active: MagicMock) -> None:
-        assert LinstorController.is_running()
-        mock_is_service_active.assert_called_once_with(_SERVICE_LINSTOR_CONTROLLER)
-
-    @patch(f"{MODULE_NAME}.is_service_active", return_value=False)
-    def test_not_running(self, mock_is_service_active: MagicMock) -> None:
-        assert not LinstorController.is_running()
-        mock_is_service_active.assert_called_once_with(_SERVICE_LINSTOR_CONTROLLER)
-
-    @pytest.mark.parametrize("service_name, function_name", [
-        ("start", "start_service"),
-        ("stop", "stop_service"),
-        ("restart", "restart_service")
-    ])
-    def test_service_command(self, service_name: str, function_name: str) -> None:
-        with patch(f"{MODULE_NAME}.{function_name}") as mock_function_name:
-            getattr(LinstorController, service_name)()
-        mock_function_name.assert_called_once_with(_SERVICE_LINSTOR_CONTROLLER)
