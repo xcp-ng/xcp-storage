@@ -28,6 +28,15 @@ _DRBD_MODULE: Final = Drbd.__module__
 
 # ------------------------------------------------------------------------------
 
+# Resource and nodes of the DRBD statuses of the tests (`drbd_json_status_*`).
+TEST_DRBD_RESOURCE_NAME: Final = "xcp-volume-patate"
+TEST_DRBD_PRIMARY_NODE_NAME: Final = "sr123-s2"
+TEST_DRBD_PRIMARY_NODE_ADDRESS: Final = "10.10.0.13"
+TEST_DRBD_SECONDARY_NODE_NAME: Final = "sr123-s1"
+TEST_DRBD_SECONDARY_NODE_ADDRESS: Final = "10.10.0.12"
+
+# ------------------------------------------------------------------------------
+
 class DrbdDebugFs:
     """
     Fake DRBD debugfs (`/sys/kernel/debug/drbd`) in a temporary directory.
@@ -52,7 +61,7 @@ def drbd_debug_fs(tmp_path: Path) -> Iterator[DrbdDebugFs]:
 @pytest.fixture
 def drbd_json_status_primary() -> str:
     return json.dumps([{
-        "name": "xcp-volume-patate",
+        "name": TEST_DRBD_RESOURCE_NAME,
         "node-id": 1,
         "role": "Primary",
         "suspended": False,
@@ -79,7 +88,7 @@ def drbd_json_status_primary() -> str:
         }],
         "connections": [{
             "peer-node-id": 0,
-            "name": "sr123-s1",
+            "name": TEST_DRBD_SECONDARY_NODE_NAME,
             "connection-state": "Connected",
             "congested": False,
             "peer-role": "Secondary",
@@ -88,12 +97,12 @@ def drbd_json_status_primary() -> str:
             "rs-in-flight": 0,
             "paths": [{
                 "this_host": {
-                    "address": "10.10.0.13",
+                    "address": TEST_DRBD_PRIMARY_NODE_ADDRESS,
                     "port": 7261,
                     "family": "ipv4"
                 },
                 "remote_host": {
-                    "address": "10.10.0.12",
+                    "address": TEST_DRBD_SECONDARY_NODE_ADDRESS,
                     "port": 7261,
                     "family": "ipv4"
                 },
@@ -120,7 +129,7 @@ def drbd_json_status_primary() -> str:
 @pytest.fixture
 def drbd_json_status_secondary() -> str:
     return json.dumps([{
-        "name": "xcp-volume-patate",
+        "name": TEST_DRBD_RESOURCE_NAME,
         "node-id": 0,
         "role": "Secondary",
         "suspended": False,
@@ -147,7 +156,7 @@ def drbd_json_status_secondary() -> str:
         }],
         "connections": [{
             "peer-node-id": 1,
-            "name": "sr123-s2",
+            "name": TEST_DRBD_PRIMARY_NODE_NAME,
             "connection-state": "Connected",
             "congested": False,
             "peer-role": "Primary",
@@ -156,12 +165,12 @@ def drbd_json_status_secondary() -> str:
             "rs-in-flight": 0,
             "paths": [{
                 "this_host": {
-                    "address": "10.10.0.12",
+                    "address": TEST_DRBD_SECONDARY_NODE_ADDRESS,
                     "port": 7261,
                     "family": "ipv4"
                 },
                 "remote_host": {
-                    "address": "10.10.0.13",
+                    "address": TEST_DRBD_PRIMARY_NODE_ADDRESS,
                     "port": 7261,
                     "family": "ipv4"
                 },

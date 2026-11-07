@@ -13,7 +13,11 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 import contextlib
-from dataclasses import dataclass
+from dataclasses import (
+    dataclass,
+    replace,
+)
+from enum import Enum
 import json
 from pathlib import Path
 import re
@@ -55,8 +59,66 @@ _DRBDSETUP_TIMEOUT: Final = 10.0
 
 _REGEX_DRBD_OPENER_LINE: Final = re.compile(r"(.*)\s+(\d+)\s+(\d+)")
 
+# Prefix giving the opener that auto-promoted a resource.
+_DRBD_AUTO_PROMOTER_LINE_PREFIX: Final = "+"
+
 # Characters allowed in a resource name: ASCII only, and neither a path separator nor a leading `-` or `.`.
 _REGEX_DRBD_RESOURCE_NAME: Final = re.compile(r"\w[\w.-]*", re.ASCII)
+
+# ------------------------------------------------------------------------------
+
+class DrbdRole(str, Enum):
+    """
+    Role of a resource opened for writing (primary), or not,
+    as reported by `drbdsetup status --json`.
+    """
+
+    PRIMARY = "Primary"
+    SECONDARY = "Secondary"
+
+class DrbdDiskState(str, Enum):
+    """
+    State of a volume of a resource,
+    as reported by `drbdsetup status --json`.
+    """
+
+    DISKLESS = "Diskless"
+    ATTACHING = "Attaching"
+    DETACHING = "Detaching"
+    FAILED = "Failed"
+    NEGOTIATING = "Negotiating"
+    INCONSISTENT = "Inconsistent"
+    OUTDATED = "Outdated"
+    UNKNOWN = "DUnknown"
+    CONSISTENT = "Consistent"
+    UP_TO_DATE = "UpToDate"
+
+class DrbdConnectionState(str, Enum):
+    """
+    State of the connection to a peer of a resource,
+    as reported by `drbdsetup status --json`.
+    """
+
+    STANDALONE = "StandAlone"
+    DISCONNECTING = "Disconnecting"
+    UNCONNECTED = "Unconnected"
+    TIMEOUT = "Timeout"
+    BROKEN_PIPE = "BrokenPipe"
+    NETWORK_FAILURE = "NetworkFailure"
+    PROTOCOL_ERROR = "ProtocolError"
+    CONNECTING = "Connecting"
+    TEAR_DOWN = "TearDown"
+    CONNECTED = "Connected"
+
+@dataclass(frozen=True)
+class DrbdOpener:
+    pid: int
+    process_name: str
+    cmdline: List[str]
+    # The duration is expressed in milliseconds.
+    open_duration: int
+    # Opener whose opening auto-promoted the resource (primary role).
+    auto_promoter: bool = False
 
 # ------------------------------------------------------------------------------
 
@@ -131,13 +193,33 @@ def _get_drbd_status(resource_name: str) -> Dict[str, Any]:
 
 # ------------------------------------------------------------------------------
 
-@dataclass(frozen=True)
-class DrbdOpener:
-    pid: int
-    process_name: str
-    cmdline: List[str]
-    # The duration is expressed in milliseconds.
-    open_duration: int
+def _parse_drbd_opener_lines(
+    resource_name: str, volume_number: int, lines: List[str], *, auto_promoter: bool = False
+) -> List[DrbdOpener]:
+    # `<process name> <pid> <open duration in ms>` on each line, an invalid line being skipped with a warning.
+    drbd_openers = []
+    for line in lines:
+        match = _REGEX_DRBD_OPENER_LINE.fullmatch(line)
+        if not match:
+            logger.warning(
+                "Unable to parse DRBD opener line of volume `%s/%d` with: `%s`.",
+                resource_name,
+                volume_number,
+                line
+            )
+            continue
+
+        groups = match.groups()
+        pid = int(groups[1])
+        drbd_openers.append(DrbdOpener(
+            pid=pid,
+            process_name=groups[0],
+            # Note: `cmdline` is empty for `mount` calls. That's correct because `mount` process is dead.
+            cmdline=get_process_cmdline(pid),
+            open_duration=int(groups[2]),
+            auto_promoter=auto_promoter
+        ))
+    return drbd_openers
 
 # ------------------------------------------------------------------------------
 
@@ -191,11 +273,11 @@ class Drbd:
             return ""
 
         with _handle_drbd_json_error():
-            if status["role"] == "Primary":
+            if status["role"] == DrbdRole.PRIMARY:
                 return status["connections"][0]["paths"][0]["this_host"]["address"]
 
             for connection in status["connections"]:
-                if connection["peer-role"] == "Primary":
+                if connection["peer-role"] == DrbdRole.PRIMARY:
                     return connection["paths"][0]["remote_host"]["address"]
 
         return ""
@@ -213,29 +295,63 @@ class Drbd:
             logger.info("Unable to get DRBD openers of volume `%s/%d`: `%s`.", resource_name, volume_number, e)
             return []
 
-        drbd_openers = []
+        # The opener whose opening auto-promoted the resource has its own line, with a prefix
+        # (list position is not assumed).
+        opener_lines = []
+        auto_promoter_lines = []
         for line in lines:
-            match = _REGEX_DRBD_OPENER_LINE.fullmatch(line)
-            if not match:
-                logger.warning(
-                    "Unable to parse DRBD opener line of volume `%s/%d` with: `%s`.",
-                    resource_name,
-                    volume_number,
-                    line
-                )
-                continue
+            if line.startswith(_DRBD_AUTO_PROMOTER_LINE_PREFIX):
+                auto_promoter_lines.append(line[len(_DRBD_AUTO_PROMOTER_LINE_PREFIX):])
+            else:
+                opener_lines.append(line)
 
-            groups = match.groups()
-            pid = int(groups[1])
-            drbd_openers.append(DrbdOpener(
-                pid=pid,
-                process_name=groups[0],
-                # Note: `cmdline` is empty for `mount` calls. That's correct because `mount` process is dead.
-                cmdline=get_process_cmdline(pid),
-                open_duration=int(groups[2])
-            ))
+        drbd_openers = _parse_drbd_opener_lines(resource_name, volume_number, opener_lines)
+        auto_promoters = _parse_drbd_opener_lines(resource_name, volume_number, auto_promoter_lines, auto_promoter=True)
+
+        for auto_promoter in auto_promoters:
+            index = next((
+                index for index, drbd_opener in enumerate(drbd_openers)
+                if drbd_opener.pid == auto_promoter.pid and drbd_opener.process_name == auto_promoter.process_name
+            ), None)
+            if index is None:
+                drbd_openers.append(auto_promoter)
+            else:
+                drbd_openers[index] = replace(drbd_openers[index], auto_promoter=True)
 
         return drbd_openers
+
+    @staticmethod
+    def is_healthy(resource_name: str) -> bool:
+        """
+        Return whether `resource_name` has its I/O not suspended and the quorum
+        on this node, and its replicas holding data up to date, on this node and
+        on its peers, all connected to this node.
+        """
+
+        _check_drbd_resource_name(resource_name)
+        status = _get_drbd_status(resource_name)
+        if not status:
+            return False
+
+        with _handle_drbd_json_error():
+            if status["suspended"] or not all(device["quorum"] for device in status["devices"]):
+                return False
+
+            disks = [(device["disk-state"], device["client"]) for device in status["devices"]]
+            for connection in status["connections"]:
+                if connection["connection-state"] != DrbdConnectionState.CONNECTED:
+                    return False
+                disks.extend(
+                    (peer_device["peer-disk-state"], peer_device["peer-client"])
+                    for peer_device in connection["peer_devices"]
+                )
+
+            return (
+                all(is_client or disk_state == DrbdDiskState.UP_TO_DATE for disk_state, is_client in disks) and
+                any(disk_state == DrbdDiskState.UP_TO_DATE for disk_state, _is_client in disks)
+            )
+
+        return False
 
     @staticmethod
     def demote(resource_name: str) -> bool:
