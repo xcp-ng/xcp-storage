@@ -12,6 +12,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+import json
 from pathlib import Path
 from unittest.mock import (
     MagicMock,
@@ -20,7 +21,14 @@ from unittest.mock import (
 
 import pytest
 
-from tests.backends.drbd import DrbdDebugFs
+from tests.backends.drbd import (
+    DrbdDebugFs,
+    TEST_DRBD_PRIMARY_NODE_ADDRESS,
+    TEST_DRBD_PRIMARY_NODE_NAME,
+    TEST_DRBD_RESOURCE_NAME,
+    TEST_DRBD_SECONDARY_NODE_ADDRESS,
+    TEST_DRBD_SECONDARY_NODE_NAME,
+)
 from xcp_storage.backends.drbd import (
     _DRBDSETUP_TIMEOUT,
     _EXEC_PATH_DRBDSETUP,
@@ -29,7 +37,10 @@ from xcp_storage.backends.drbd import (
     Drbd,
     DRBD_BY_RES_PATH,
     DRBD_BY_RES_PREFIX,
+    DrbdConnectionState,
+    DrbdDiskState,
     DrbdOpener,
+    DrbdRole,
 )
 import xcp_storage.log as log
 
@@ -39,7 +50,9 @@ from xcp_storage.typing import (
     Final,
     Iterator,
     List,
+    Sequence,
     StrPath,
+    Tuple,
 )
 
 # ==============================================================================
@@ -109,12 +122,14 @@ class TestGetDrbdStatus:
     def test_success(self, mock_run_command: MagicMock, drbd_json_status_primary: str) -> None:
         mock_run_command.return_value = (drbd_json_status_primary, "", 0)
 
-        status = _get_drbd_status("xcp-volume-patate")
+        status = _get_drbd_status(TEST_DRBD_RESOURCE_NAME)
 
-        assert status["name"] == "xcp-volume-patate"
-        assert status["role"] == "Primary"
+        assert status["name"] == TEST_DRBD_RESOURCE_NAME
+        assert status["role"] == DrbdRole.PRIMARY
         mock_run_command.assert_called_once_with(
-            [_EXEC_PATH_DRBDSETUP, "status", "xcp-volume-patate", "--json"], simple=False, timeout=_DRBDSETUP_TIMEOUT
+            [_EXEC_PATH_DRBDSETUP, "status", TEST_DRBD_RESOURCE_NAME, "--json"],
+            simple=False,
+            timeout=_DRBDSETUP_TIMEOUT
         )
 
     def test_command_failure(self, mock_run_command: MagicMock, caplog: pytest.LogCaptureFixture) -> None:
@@ -129,7 +144,7 @@ class TestGetDrbdStatus:
     def test_command_not_found(self, mock_run_command: MagicMock, caplog: pytest.LogCaptureFixture) -> None:
         mock_run_command.side_effect = FileNotFoundError(2, "No such file or directory", _EXEC_PATH_DRBDSETUP)
         with caplog.at_level(log.INFO):
-            assert _get_drbd_status("xcp-volume-patate") == {}
+            assert _get_drbd_status(TEST_DRBD_RESOURCE_NAME) == {}
         assert (
             "Failed to get DRBD status of resource `xcp-volume-patate`: "
             f"`[Errno 2] No such file or directory: '{_EXEC_PATH_DRBDSETUP}'`."
@@ -141,13 +156,13 @@ class TestGetDrbdStatus:
     ) -> None:
         mock_run_command.return_value = (stdout, "", 0)
         with caplog.at_level(log.INFO):
-            assert _get_drbd_status("xcp-volume-patate") == {}
+            assert _get_drbd_status(TEST_DRBD_RESOURCE_NAME) == {}
         assert "Failed to read DRBD status of resource `xcp-volume-patate` as JSON" in caplog.text
 
     def test_empty_list(self, mock_run_command: MagicMock, caplog: pytest.LogCaptureFixture) -> None:
         mock_run_command.return_value = ("[]", "", 0)
         with caplog.at_level(log.INFO):
-            assert _get_drbd_status("xcp-volume-patate") == {}
+            assert _get_drbd_status(TEST_DRBD_RESOURCE_NAME) == {}
         assert "Failed to parse DRBD configuration" in caplog.text
 
 # ------------------------------------------------------------------------------
@@ -157,21 +172,23 @@ class TestGetDrbdConnectionAddress:
         self, mock_run_command: MagicMock, drbd_json_status_primary: str
     ) -> None:
         mock_run_command.return_value = (drbd_json_status_primary, "", 0)
-        assert Drbd.get_connection_address("xcp-volume-patate", "sr123-s1") == "10.10.0.12"
+        assert Drbd.get_connection_address(TEST_DRBD_RESOURCE_NAME, TEST_DRBD_SECONDARY_NODE_NAME) == \
+            TEST_DRBD_SECONDARY_NODE_ADDRESS
 
     def test_connection_address_b(
         self, mock_run_command: MagicMock, drbd_json_status_secondary: str
     ) -> None:
         mock_run_command.return_value = (drbd_json_status_secondary, "", 0)
-        assert Drbd.get_connection_address("xcp-volume-patate", "sr123-s2") == "10.10.0.13"
+        assert Drbd.get_connection_address(TEST_DRBD_RESOURCE_NAME, TEST_DRBD_PRIMARY_NODE_NAME) == \
+            TEST_DRBD_PRIMARY_NODE_ADDRESS
 
     def test_unknown_node(self, mock_run_command: MagicMock, drbd_json_status_primary: str) -> None:
         mock_run_command.return_value = (drbd_json_status_primary, "", 0)
-        assert Drbd.get_connection_address("xcp-volume-patate", "sr123-s67") == ""
+        assert Drbd.get_connection_address(TEST_DRBD_RESOURCE_NAME, "sr123-s67") == ""
 
     def test_status_error(self, mock_run_command: MagicMock) -> None:
         mock_run_command.return_value = ("", "xcp-volume-frite: No such resource\n", 10)
-        assert Drbd.get_connection_address("xcp-volume-frite", "sr123-s1") == ""
+        assert Drbd.get_connection_address("xcp-volume-frite", TEST_DRBD_SECONDARY_NODE_NAME) == ""
 
 # ------------------------------------------------------------------------------
 
@@ -180,17 +197,103 @@ class TestGetDrbdPrimaryAddress:
         self, mock_run_command: MagicMock, drbd_json_status_primary: str
     ) -> None:
         mock_run_command.return_value = (drbd_json_status_primary, "", 0)
-        assert Drbd.get_primary_address("xcp-volume-patate") == "10.10.0.13"
+        assert Drbd.get_primary_address(TEST_DRBD_RESOURCE_NAME) == TEST_DRBD_PRIMARY_NODE_ADDRESS
 
     def test_primary_remote(
         self, mock_run_command: MagicMock, drbd_json_status_secondary: str
     ) -> None:
         mock_run_command.return_value = (drbd_json_status_secondary, "", 0)
-        assert Drbd.get_primary_address("xcp-volume-patate") == "10.10.0.13"
+        assert Drbd.get_primary_address(TEST_DRBD_RESOURCE_NAME) == TEST_DRBD_PRIMARY_NODE_ADDRESS
 
     def test_status_error(self, mock_run_command: MagicMock) -> None:
         mock_run_command.return_value = ("", "xcp-volume-frite: No such resource\n", 10)
         assert Drbd.get_primary_address("xcp-volume-frite") == ""
+
+# ------------------------------------------------------------------------------
+
+# Fields to set in a DRBD status: path of their object in the status, name and value of each field.
+DrbdStatusFields = Sequence[Tuple[Tuple[Any, ...], str, Any]]
+
+class TestIsDrbdHealthy:
+    RESOURCE_PATH: Final = ()
+    LOCAL_VOLUME_PATH: Final = ("devices", 0)
+    CONNECTION_PATH: Final = ("connections", 0)
+    PEER_VOLUME_PATH: Final = ("connections", 0, "peer_devices", 0)
+
+    # Healthy.
+    LOCAL_CLIENT_FIELDS: Final = (
+        (LOCAL_VOLUME_PATH, "disk-state", DrbdDiskState.DISKLESS),
+        (LOCAL_VOLUME_PATH, "client", True)
+    )
+    PEER_CLIENT_FIELDS: Final = (
+        (PEER_VOLUME_PATH, "peer-disk-state", DrbdDiskState.DISKLESS),
+        (PEER_VOLUME_PATH, "peer-client", True)
+    )
+
+    # Not healthy.
+    LOCAL_DETACHED_DISK_FIELDS: Final = (
+        (LOCAL_VOLUME_PATH, "disk-state", DrbdDiskState.DISKLESS),
+    )
+    PEER_DETACHED_DISK_FIELDS: Final = (
+        (PEER_VOLUME_PATH, "peer-disk-state", DrbdDiskState.DISKLESS),
+    )
+
+    @staticmethod
+    def set_status_fields(mock_run_command: MagicMock, status_json: str, fields: DrbdStatusFields) -> None:
+        status = json.loads(status_json)
+        for path, name, value in fields:
+            status_object = status[0]
+            for path_key in path:
+                status_object = status_object[path_key]
+            status_object[name] = value
+        mock_run_command.return_value = (json.dumps(status), "", 0)
+
+    @pytest.mark.parametrize("fields", [
+        (),
+        LOCAL_CLIENT_FIELDS,
+        PEER_CLIENT_FIELDS
+    ], ids=["diskful", "local-diskless", "peer-diskless"])
+    def test_healthy(
+        self, mock_run_command: MagicMock, drbd_json_status_primary: str, fields: DrbdStatusFields
+    ) -> None:
+        self.set_status_fields(mock_run_command, drbd_json_status_primary, fields)
+        assert Drbd.is_healthy(TEST_DRBD_RESOURCE_NAME)
+
+    @pytest.mark.parametrize("fields", [
+        ((LOCAL_VOLUME_PATH, "disk-state", DrbdDiskState.OUTDATED), ),
+        ((PEER_VOLUME_PATH, "peer-disk-state", DrbdDiskState.OUTDATED), ),
+        ((CONNECTION_PATH, "connection-state", DrbdConnectionState.CONNECTING), ),
+        LOCAL_DETACHED_DISK_FIELDS,
+        PEER_DETACHED_DISK_FIELDS,
+        (*LOCAL_CLIENT_FIELDS, *PEER_CLIENT_FIELDS),
+        ((RESOURCE_PATH, "suspended", True), ),
+        ((LOCAL_VOLUME_PATH, "quorum", False), )
+    ], ids=[
+        "local-volume-outdated",
+        "peer-volume-outdated",
+        "peer-not-connected",
+        "local-disk-detached",
+        "peer-disk-detached",
+        "no-disk",
+        "suspended",
+        "no-quorum"
+    ])
+    def test_not_healthy(
+        self, mock_run_command: MagicMock, drbd_json_status_primary: str, fields: DrbdStatusFields
+    ) -> None:
+        self.set_status_fields(mock_run_command, drbd_json_status_primary, fields)
+        assert not Drbd.is_healthy(TEST_DRBD_RESOURCE_NAME)
+
+    def test_invalid_status(self, mock_run_command: MagicMock, drbd_json_status_primary: str) -> None:
+        status = json.loads(drbd_json_status_primary)
+        del status[0]["devices"]
+        mock_run_command.return_value = (json.dumps(status), "", 0)
+
+        assert not Drbd.is_healthy(TEST_DRBD_RESOURCE_NAME)
+
+    def test_status_error(self, mock_run_command: MagicMock) -> None:
+        mock_run_command.return_value = ("", "xcp-volume-frite: No such resource\n", 10)
+        assert not Drbd.is_healthy("xcp-volume-frite")
 
 # ------------------------------------------------------------------------------
 
@@ -231,6 +334,51 @@ class TestGetDrbdLocalOpeners:
                 cmdline=expected["cmdline"],
                 open_duration=expected["open_duration"],
             )
+
+    @pytest.mark.parametrize("openers_content", [
+        "tapdisk\t482584\t86143\n+tapdisk\t482584\t86143\n",
+        "+tapdisk\t482584\t86143\ntapdisk\t482584\t86143\n"
+    ], ids=["last", "first"])
+    def test_auto_promoter_is_not_duplicated(
+        self,
+        drbd_debug_fs: DrbdDebugFs,
+        mock_get_process_cmdline: MagicMock,
+        openers_content: str
+    ) -> None:
+        drbd_debug_fs.write_openers(TEST_DRBD_RESOURCE_NAME, 0, openers_content)
+        mock_get_process_cmdline.return_value = ["tapdisk"]
+
+        assert Drbd.get_local_openers(TEST_DRBD_RESOURCE_NAME, 0) == [
+            DrbdOpener(pid=482584, process_name="tapdisk", cmdline=["tapdisk"], open_duration=86143, auto_promoter=True)
+        ]
+
+    @pytest.mark.parametrize("openers_content", [
+        "tapdisk\t482584\t86143\n+mount\t127138\t90000\n",
+        "+mount\t127138\t90000\ntapdisk\t482584\t86143\n"
+    ], ids=["last", "first"])
+    def test_unlisted_auto_promoter_is_added(
+        self,
+        drbd_debug_fs: DrbdDebugFs,
+        mock_get_process_cmdline: MagicMock,
+        openers_content: str
+    ) -> None:
+        # The auto-promoter closed the device, another opener keeps it open: DRBD still writes it.
+        drbd_debug_fs.write_openers(TEST_DRBD_RESOURCE_NAME, 0, openers_content)
+        mock_get_process_cmdline.return_value = []
+
+        assert Drbd.get_local_openers(TEST_DRBD_RESOURCE_NAME, 0) == [
+            DrbdOpener(pid=482584, process_name="tapdisk", cmdline=[], open_duration=86143),
+            DrbdOpener(pid=127138, process_name="mount", cmdline=[], open_duration=90000, auto_promoter=True)
+        ]
+
+    def test_invalid_auto_promoter_line_is_ignored(
+        self, drbd_debug_fs: DrbdDebugFs, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        drbd_debug_fs.write_openers(TEST_DRBD_RESOURCE_NAME, 0, "+mount\n")
+
+        with caplog.at_level(log.WARNING):
+            assert Drbd.get_local_openers(TEST_DRBD_RESOURCE_NAME, 0) == []
+        assert f"Unable to parse DRBD opener line of volume `{TEST_DRBD_RESOURCE_NAME}/0` with: `mount`." in caplog.text
 
     @pytest.mark.parametrize("line", [
         "python 483388 1877 extra",
@@ -318,9 +466,10 @@ class TestInvalidDrbdArguments:
     ) -> None:
         for call in (
             lambda: Drbd.build_path(resource_name, 0),
-            lambda: Drbd.get_connection_address(resource_name, "sr123-s1"),
+            lambda: Drbd.get_connection_address(resource_name, TEST_DRBD_SECONDARY_NODE_NAME),
             lambda: Drbd.get_primary_address(resource_name),
             lambda: Drbd.get_local_openers(resource_name, 0),
+            lambda: Drbd.is_healthy(resource_name),
             lambda: Drbd.demote(resource_name)
         ):
             with pytest.raises(ValueError, match=message):
@@ -339,8 +488,8 @@ class TestInvalidDrbdArguments:
         message: str
     ) -> None:
         for call in (
-            lambda: Drbd.build_path("res-test", volume_number),
-            lambda: Drbd.get_local_openers("res-test", volume_number)
+            lambda: Drbd.build_path(TEST_DRBD_RESOURCE_NAME, volume_number),
+            lambda: Drbd.get_local_openers(TEST_DRBD_RESOURCE_NAME, volume_number)
         ):
             with pytest.raises(ValueError, match=message):
                 call()
