@@ -1,0 +1,31 @@
+rules:
+  - id: python-enforce-size-unit-constants
+    languages: [python]
+    severity: WARNING
+    message: "Sizes must use `KIB`, `MIB`, `GIB` or `TIB` of `xcp_storage.utils.size`, not `1024` or its powers."
+    # Report the literal only, not the units themselves (`MIB: Final = KIB * KIB` with `KIB: Final = 1024`).
+    options:
+      constant_propagation: false
+    pattern-either:
+      # Conversion by `1024`, also written `0x400` or `1_024`: `size_kib * 1024`, `size // 1024`...
+      - pattern: "$EXPRESSION * 1024"
+      - pattern: "1024 * $EXPRESSION"
+      - pattern: "$EXPRESSION / 1024"
+      - pattern: "$EXPRESSION // 1024"
+      - pattern: "$VARIABLE *= 1024"
+      - pattern: "$VARIABLE /= 1024"
+      - pattern: "$VARIABLE //= 1024"
+      # Power of `1024`: `1024 ** 3`.
+      - pattern: "1024 ** $EXPRESSION"
+      # Shift by a unit: `1 << 20`, `size >> 30`.
+      - patterns:
+          - pattern-either:
+              - pattern: "$EXPRESSION << $SHIFT"
+              - pattern: "$EXPRESSION >> $SHIFT"
+          - metavariable-regex:
+              metavariable: $SHIFT
+              regex: '^(?:10|20|30|40)$'
+      # Unit written as a number: MiB, GiB, TiB.
+      - pattern: "1048576"
+      - pattern: "1073741824"
+      - pattern: "1099511627776"
