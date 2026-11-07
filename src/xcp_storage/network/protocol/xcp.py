@@ -19,6 +19,7 @@ import struct
 
 from xcp_storage.network.protocol import Protocol, ProtocolError
 from xcp_storage.network.socket import socket_receive, socket_send
+from xcp_storage.utils.size import MIB
 
 from xcp_storage.typing import (
     Final,
@@ -46,7 +47,7 @@ class XcpProtocol(Protocol):
     HEADER_SIZE: Final = struct.calcsize(HEADER_FORMAT)
     VERSION: Final = 1
 
-    MAX_PACKET_SIZE: Final = 32 << 20 # 32 MiB
+    MAX_PACKET_SIZE: Final = 32 * MIB
 
     # The sequence number is a 16-bit field: valid values are in [1, MAX_SEQ].
     # 0 is never generated.
