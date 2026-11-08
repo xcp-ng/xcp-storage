@@ -21,7 +21,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from tests.network.tls import over_plain_and_tls
-from tests.rpc.conftest import CLIENT_TIMEOUT, RpcClientFactory
+from tests.rpc import RPC_CLIENT_TIMEOUT, RpcClientFactory
 from tests.utils.thread import create_thread_group
 from xcp_storage.network.protocol import Protocol, ProtocolError
 from xcp_storage.network.protocol.xcp import XcpProtocol
@@ -61,7 +61,7 @@ class TestRpcClient:
             rpc_client.call_api(non_rpc_function)
 
     def test_connect_with_unreachable_server(self) -> None:
-        rpc_client = RpcApiClient("10.255.255.1", 9999, client_timeout=CLIENT_TIMEOUT)
+        rpc_client = RpcApiClient("10.255.255.1", 9999, client_timeout=RPC_CLIENT_TIMEOUT)
         with pytest.raises(TcpClientError, match="Unable to connect to server."):
             rpc_client.connect()
 
@@ -72,7 +72,7 @@ class TestRpcClient:
             rpc_server.address,
             rpc_server.port,
             ssl_context=ssl.create_default_context(),
-            client_timeout=CLIENT_TIMEOUT
+            client_timeout=RPC_CLIENT_TIMEOUT
         )
         with pytest.raises(TcpClientError, match="Unable to connect to server."):
             rpc_client.connect()
@@ -204,7 +204,7 @@ class TestRpcClientServer:
         # An unexpected error (not a protocol one) leaves the sequence number of the request unknown.
         mock_receive_packet_async.side_effect = RuntimeError("boom")
         tcp_client = TcpClient(
-            rpc_server.address, rpc_server.port, client_timeout=CLIENT_TIMEOUT, ssl_context=client_ssl_context
+            rpc_server.address, rpc_server.port, client_timeout=RPC_CLIENT_TIMEOUT, ssl_context=client_ssl_context
         )
         with tcp_client:
             assert tcp_client.socket
@@ -236,7 +236,7 @@ class TestRpcClientServer:
         self, rpc_server: RpcApiServer, rpc_client_factory: RpcClientFactory
     ) -> None:
         # Connect and close without sending anything.
-        with TcpClient(rpc_server.address, rpc_server.port, client_timeout=CLIENT_TIMEOUT):
+        with TcpClient(rpc_server.address, rpc_server.port, client_timeout=RPC_CLIENT_TIMEOUT):
             pass
 
         assert rpc_client_factory().call("echo.echo", params={"message": "alive"}) == "alive"

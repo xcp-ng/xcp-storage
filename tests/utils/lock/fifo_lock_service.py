@@ -21,7 +21,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from tests.conftest import PROJECT_DAEMONS_DIR_PATH, PROJECT_PATH
+from tests import PROJECT_DAEMONS_DIR_PATH, PROJECT_PATH
 from xcp_storage.utils.contextlib import scoped_factory
 from xcp_storage.utils.lock.fifo import (
     _LOCK_DAEMON_NAME,

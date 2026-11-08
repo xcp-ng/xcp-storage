@@ -15,7 +15,7 @@
 import pytest
 
 from tests.network.tls import over_plain_and_tls
-from tests.rpc.conftest import RpcClientFactory
+from tests.rpc import RpcClientFactory
 from xcp_storage.network.socket import SocketTimeoutError
 import xcp_storage.rpc.api as api
 from xcp_storage.utils.json.rpc import JsonRpcRequestError, JsonRpcResponseError

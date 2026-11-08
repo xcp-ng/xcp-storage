@@ -27,7 +27,7 @@ from xcp_storage.typing import Final, Iterator
 
 # ==============================================================================
 
-SOCKET_PAIR_TIMEOUT: Final = 3.0
+_SOCKET_PAIR_TIMEOUT: Final = 3.0
 
 @pytest.fixture
 def unix_socket_path(tmp_path: Path) -> Path:
@@ -39,6 +39,6 @@ def unix_socket_path(tmp_path: Path) -> Path:
 
 @pytest.fixture
 def socket_pair() -> Iterator[SocketPair]:
-    first, second = create_socket_pair(timeout=SOCKET_PAIR_TIMEOUT)
+    first, second = create_socket_pair(timeout=_SOCKET_PAIR_TIMEOUT)
     with first, second:
         yield first, second
