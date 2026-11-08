@@ -17,24 +17,20 @@ import shutil
 
 import pytest
 
+from tests import PROJECT_PATH
 from xcp_storage.utils.process import CommandError, run_internal_command
 
 from xcp_storage.typing import Final, List
 
 # ==============================================================================
 
-PROJECT_PATH: Final = Path(__file__).parents[1]
-
 # The usual CMake build directory of the project: it's initialized (if necessary),
 # reused and never cleaned by the tests.
-PROJECT_BUILD_PATH: Final = PROJECT_PATH / "build"
-
-# Directory of the daemons in the sources.
-PROJECT_DAEMONS_DIR_PATH: Final = PROJECT_PATH / "daemons"
+_PROJECT_BUILD_PATH: Final = PROJECT_PATH / "build"
 
 # Nothing is installed on the system by the tests, but the configuration must not
 # depend on system paths: the install directories are inside the build directory.
-_PROJECT_INSTALL_PATH: Final = PROJECT_BUILD_PATH / "install"
+_PROJECT_INSTALL_PATH: Final = _PROJECT_BUILD_PATH / "install"
 _PROJECT_SYSTEMD_UNIT_PATH: Final = _PROJECT_INSTALL_PATH / "lib" / "systemd" / "system"
 
 # `cmake` configures the whole project and `pkg-config` is required by its `CMakeLists.txt`.
@@ -68,10 +64,10 @@ def project_build_path() -> Path:
     _run_build_command([
         "cmake",
         "-S", str(PROJECT_PATH),
-        "-B", str(PROJECT_BUILD_PATH),
+        "-B", str(_PROJECT_BUILD_PATH),
         f"-DCMAKE_INSTALL_PREFIX:PATH={_PROJECT_INSTALL_PATH}",
         f"-DSYSTEMD_SYSTEM_UNIT_DIR:PATH={_PROJECT_SYSTEMD_UNIT_PATH}"
     ])
-    _run_build_command(["cmake", "--build", str(PROJECT_BUILD_PATH)])
+    _run_build_command(["cmake", "--build", str(_PROJECT_BUILD_PATH)])
 
-    return PROJECT_BUILD_PATH
+    return _PROJECT_BUILD_PATH

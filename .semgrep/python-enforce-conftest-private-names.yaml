@@ -1,0 +1,58 @@
+rules:
+  - id: python-enforce-conftest-private-names
+    languages: [python]
+    severity: WARNING
+    message: "`$NAME` is neither a fixture nor a pytest hook: a `conftest.py` is never imported, so its other names are private using `_` prefix."
+    paths:
+      include:
+        - conftest.py
+    patterns:
+      - pattern-either:
+          # Assigned at module level: constant, type alias.
+          - patterns:
+              - pattern: "$NAME = $VALUE"
+              - pattern-not-inside: |
+                  def $FUNCTION(...):
+                      ...
+              - pattern-not-inside: |
+                  class $CLASS:
+                      ...
+          # Defined function, not a fixture.
+          - patterns:
+              - pattern: |
+                  def $NAME(...):
+                      ...
+              - pattern-not: |
+                  @pytest.fixture(...)
+                  def $NAME(...):
+                      ...
+              - pattern-not-inside: |
+                  def $FUNCTION(...):
+                      ...
+                      def $NAME(...):
+                          ...
+              - pattern-not-inside: |
+                  class $CLASS:
+                      ...
+                      def $NAME(...):
+                          ...
+          # Defined class.
+          - patterns:
+              - pattern: |
+                  class $NAME:
+                      ...
+              - pattern-not-inside: |
+                  def $FUNCTION(...):
+                      ...
+                      class $NAME:
+                          ...
+              - pattern-not-inside: |
+                  class $CLASS:
+                      ...
+                      class $NAME:
+                          ...
+      - focus-metavariable: $NAME
+      # Hooks (`pytest_addoption`) and variables read by pytest (`pytest_plugins`) keep their name.
+      - metavariable-regex:
+          metavariable: $NAME
+          regex: '^(?!_|pytest_)\w+$'
