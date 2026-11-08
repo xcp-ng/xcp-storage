@@ -12,43 +12,46 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-from unittest.mock import MagicMock, patch
-
+from tests.utils.time import SimulatedTime
 from xcp_storage.utils.time import Clock, Timer
 
 # ==============================================================================
 
-@patch("time.monotonic", autospec=True)
 class TestClock:
-    def test_elapsed_time(self, mock_time: MagicMock) -> None:
-        mock_time.side_effect = [10.0, 12.5, 15.0]
+    def test_elapsed_time(self, simulated_time: SimulatedTime) -> None:
         clock = Clock()
+        simulated_time.advance(2.5)
         assert clock.elapsed_time == 2.5
+        simulated_time.advance(2.5)
         assert clock.elapsed_time == 5.0
 
-    def test_start(self, mock_time: MagicMock) -> None:
-        mock_time.side_effect = [10.0, 12.5, 15.0]
+    def test_start(self, simulated_time: SimulatedTime) -> None:
         clock = Clock()
+        simulated_time.advance(2.5)
         clock.start()
+        simulated_time.advance(2.5)
         assert clock.elapsed_time == 2.5
 
-@patch("time.monotonic", autospec=True)
 class TestTimer:
-    def test_remaining_time(self, mock_time: MagicMock) -> None:
-        mock_time.side_effect = [10.0, 12.5, 15.0, 20.0]
+    def test_remaining_time(self, simulated_time: SimulatedTime) -> None:
         timer = Timer(5.0)
+        simulated_time.advance(2.5)
         assert timer.remaining_time == 2.5
+        simulated_time.advance(2.5)
         assert timer.remaining_time == 0.0
+        simulated_time.advance(5.0)
         assert timer.remaining_time == 0.0
 
-    def test_has_expired(self, mock_time: MagicMock) -> None:
-        mock_time.side_effect = [10.0, 12.5, 15.0]
+    def test_has_expired(self, simulated_time: SimulatedTime) -> None:
         timer = Timer(5.0)
+        simulated_time.advance(2.5)
         assert not timer.has_expired()
+        simulated_time.advance(2.5)
         assert timer.has_expired()
 
-    def test_start(self, mock_time: MagicMock) -> None:
-        mock_time.side_effect = [10.0, 16.0, 18.0]
+    def test_start(self, simulated_time: SimulatedTime) -> None:
         timer = Timer(5.0)
+        simulated_time.advance(6.0)
         timer.start()
+        simulated_time.advance(2.0)
         assert timer.remaining_time == 3.0
