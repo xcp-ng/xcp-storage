@@ -21,7 +21,7 @@ from xcp_storage.typing import Final
 
 # ==============================================================================
 
-_LINSTOR_SATELLITE_SERVICE_SPEC: Final = LinstorServiceSpec(
+LINSTOR_SATELLITE_SERVICE_SPEC: Final = LinstorServiceSpec(
     LinstorSatellite,
     _SERVICE_LINSTOR_SATELLITE,
     ("enable_and_start", "disable_and_stop")
@@ -32,8 +32,8 @@ _LINSTOR_SATELLITE_SERVICE_SPEC: Final = LinstorServiceSpec(
 class TestLinstorSatelliteService(LinstorServiceTests):
     @pytest.fixture
     def linstor_service_spec(self) -> LinstorServiceSpec:
-        return _LINSTOR_SATELLITE_SERVICE_SPEC
+        return LINSTOR_SATELLITE_SERVICE_SPEC
 
-    @pytest.fixture(params=_LINSTOR_SATELLITE_SERVICE_SPEC.commands)
+    @pytest.fixture(params=LINSTOR_SATELLITE_SERVICE_SPEC.commands)
     def command(self, request: pytest.FixtureRequest) -> str:
         return request.param
