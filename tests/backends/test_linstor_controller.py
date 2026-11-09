@@ -48,7 +48,7 @@ from xcp_storage.typing import (
 
 _LINSTOR_CONTROLLER_MODULE: Final = LinstorController.__module__
 
-_LINSTOR_CONTROLLER_SERVICE_SPEC: Final = LinstorServiceSpec(
+LINSTOR_CONTROLLER_SERVICE_SPEC: Final = LinstorServiceSpec(
     LinstorController, _SERVICE_LINSTOR_CONTROLLER, ("start", "stop", "restart")
 )
 
@@ -57,9 +57,9 @@ _LINSTOR_CONTROLLER_SERVICE_SPEC: Final = LinstorServiceSpec(
 class TestLinstorControllerService(LinstorServiceTests):
     @pytest.fixture
     def linstor_service_spec(self) -> LinstorServiceSpec:
-        return _LINSTOR_CONTROLLER_SERVICE_SPEC
+        return LINSTOR_CONTROLLER_SERVICE_SPEC
 
-    @pytest.fixture(params=_LINSTOR_CONTROLLER_SERVICE_SPEC.commands)
+    @pytest.fixture(params=LINSTOR_CONTROLLER_SERVICE_SPEC.commands)
     def command(self, request: pytest.FixtureRequest) -> str:
         return request.param
 
