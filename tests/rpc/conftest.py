@@ -16,6 +16,7 @@ import ssl
 
 import pytest
 
+from tests.network import run_threaded_server
 from tests.network.tls import (  # noqa: F401
     client_ssl_context,
     ssl_contexts,
@@ -23,7 +24,6 @@ from tests.network.tls import (  # noqa: F401
     TlsContexts,
 )
 from tests.rpc import RPC_CLIENT_TIMEOUT, RpcClientFactory
-from tests.utils.thread import create_thread_group
 from xcp_storage.rpc.client import RpcApiClient
 from xcp_storage.rpc.server import RpcApiServer
 from xcp_storage.utils.contextlib import scoped_factory
@@ -50,13 +50,13 @@ def rpc_server(
 ) -> Iterator[RpcApiServer]:
     server_class = getattr(request, "param", RpcApiServer)
     server = server_class("127.0.0.1", 0, ssl_context=ssl_contexts.server if ssl_contexts else None)
-    with create_thread_group(join_timeout=_RPC_SERVER_THREAD_SHUTDOWN_TIMEOUT) as thread_group:
-        thread_group.start(server.run)
-        try:
-            assert server.wait_for_startup(timeout=_RPC_SERVER_STARTUP_TIMEOUT), "Server not started."
-            yield server
-        finally:
-            server.stop(timeout=_RPC_SERVER_SHUTDOWN_TIMEOUT)
+    with run_threaded_server(
+        server,
+        startup_timeout=_RPC_SERVER_STARTUP_TIMEOUT,
+        shutdown_timeout=_RPC_SERVER_SHUTDOWN_TIMEOUT,
+        thread_shutdown_timeout=_RPC_SERVER_THREAD_SHUTDOWN_TIMEOUT
+    ) as threaded_server:
+        yield threaded_server
 
 @pytest.fixture
 def rpc_client_factory(
