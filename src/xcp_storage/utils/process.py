@@ -112,6 +112,11 @@ class CommandError(Exception):
         self.cmd = cmd
         self.reason = reason
 
+class CommandTimeoutError(CommandError):
+    """
+    A command did not complete in time.
+    """
+
 def default_ret_code_callback(_stdout: str, _stderr: str, ret_code: int) -> int:
     return ret_code
 
@@ -176,6 +181,8 @@ def run_internal_command(
             encoding="utf-8",
             timeout=timeout
         )
+    except subprocess.TimeoutExpired as e:
+        raise CommandTimeoutError(None, str(args), reason=f"Command did not end within {timeout} second(s).") from e
     except Exception as e:
         raise CommandError(None, str(args), reason=f"Failed to run command: `{e}`.") from e
 

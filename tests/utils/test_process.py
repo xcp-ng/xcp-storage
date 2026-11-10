@@ -14,11 +14,12 @@
 
 import pytest
 
+from tests.utils.exception import raises_exactly
 from tests.utils.process import ProcFs
 import xcp_storage.log as log
 from xcp_storage.utils.process import (
     _get_process_cmdline_path,
-    CommandError,
+    CommandTimeoutError,
     get_process_cmdline,
     run_command,
 )
@@ -57,11 +58,13 @@ class TestGetProcessCmdline:
 # ------------------------------------------------------------------------------
 
 class TestRunCommandWithTimeout:
+    TIMEOUT: Final = 0.2
+
     def test_timeout(self) -> None:
-        with pytest.raises(CommandError) as exc_info:
-            run_command(["/usr/bin/sleep", "10"], timeout=0.2)
+        with raises_exactly(CommandTimeoutError, "Command execution error.") as exc_info:
+            run_command(["/usr/bin/sleep", "10"], timeout=self.TIMEOUT)
         assert exc_info.value.code is None
-        assert "timed out" in exc_info.value.reason
+        assert exc_info.value.reason == f"Command did not end within {self.TIMEOUT} second(s)."
 
     def test_success_within_timeout(self) -> None:
         assert run_command(["/usr/bin/echo", "hello"], timeout=10.0) == "hello\n"
