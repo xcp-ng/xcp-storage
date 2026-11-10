@@ -23,6 +23,7 @@ from pathlib import Path
 import re
 
 import xcp_storage.log as log
+from xcp_storage.utils.check import check_non_negative_int, check_regex_match
 from xcp_storage.utils.process import (
     get_process_cmdline,
     run_command,
@@ -126,16 +127,10 @@ class DrbdOpener:
 # to prevent code injection.
 
 def _check_drbd_resource_name(resource_name: str) -> None:
-    if not isinstance(resource_name, str):
-        raise ValueError(f"Not a DRBD resource name: `{resource_name}`.")
-    if not _REGEX_DRBD_RESOURCE_NAME.fullmatch(resource_name):
-        raise ValueError(f"Invalid DRBD resource name: `{resource_name}`.")
+    check_regex_match(resource_name, _REGEX_DRBD_RESOURCE_NAME, "DRBD resource name")
 
 def _check_drbd_volume_number(volume_number: int) -> None:
-    if not isinstance(volume_number, int) or isinstance(volume_number, bool):
-        raise ValueError(f"Not a DRBD volume number: `{volume_number}`.")
-    if volume_number < 0:
-        raise ValueError(f"Invalid DRBD volume number: `{volume_number}`.")
+    check_non_negative_int(volume_number, "DRBD volume number")
 
 # ------------------------------------------------------------------------------
 
