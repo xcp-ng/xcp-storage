@@ -26,6 +26,7 @@ from xcp_storage.network.socket import (
     SocketError,
     SocketNotListeningError,
 )
+from xcp_storage.utils.check import check_regex_match
 from xcp_storage.utils.lock import (
     DEFAULT_LOCK_ACQUIRE_DURATION_THRESHOLD,
     DEFAULT_LOCK_DURATION_THRESHOLD,
@@ -119,8 +120,7 @@ class FifoLock(HandleLock):
         acquire_duration_threshold: Optional[float] = DEFAULT_LOCK_ACQUIRE_DURATION_THRESHOLD,
         lock_duration_threshold: Optional[float] = DEFAULT_LOCK_DURATION_THRESHOLD
     ) -> None:
-        if not _LOCK_NAME_REGEX.fullmatch(name):
-            raise ValueError(f"Invalid lock name: `{name}`.")
+        check_regex_match(name, _LOCK_NAME_REGEX, "lock name")
 
         self._socket: Optional[Socket] = None
 
