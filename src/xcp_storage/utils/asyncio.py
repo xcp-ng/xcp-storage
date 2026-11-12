@@ -58,7 +58,7 @@ async def abort_stream_writer(stream: asyncio.StreamWriter) -> None:
         await closing_coro
 
 async def close_stream_writer(stream: asyncio.StreamWriter) -> None:
-    with contextlib.suppress(Exception):
+    try:
         if not stream.transport.is_closing():
             stream.close()
             abort_timer = None
@@ -69,3 +69,9 @@ async def close_stream_writer(stream: asyncio.StreamWriter) -> None:
             if abort_timer:
                 # Stream closed, no reason to force close the transport.
                 abort_timer.cancel()
+    except asyncio.CancelledError:
+        # TODO(XCPNG-3032): Workaround for python < 3.8, where `CancelledError` derives from `Exception`.
+        raise
+    except Exception: # noqa: S110
+        # Best effort: the connection is gone either way.
+        pass
