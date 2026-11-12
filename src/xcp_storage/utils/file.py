@@ -14,6 +14,7 @@
 
 import contextlib
 import os
+from pathlib import PurePath
 
 from xcp_storage.typing import Final
 
@@ -33,3 +34,11 @@ def close_fd(fd: int) -> None:
     """
     with contextlib.suppress(OSError):
         os.close(fd)
+
+def is_mount_point(path: PurePath) -> bool:
+    """
+    Test if `path` is a mount point.
+    """
+
+    # TODO(XCPNG-3032): Use `os.path` instead of `Path` for old python versions. Change me later.
+    return os.path.ismount(path)
