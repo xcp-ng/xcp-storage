@@ -1,0 +1,13 @@
+rules:
+  - id: python-enforce-remove-file-helper
+    languages: [python]
+    severity: WARNING
+    message: >-
+      Remove a file with `remove_file` from `xcp_storage.utils.file`, not directly with `os.remove`, `os.unlink` or
+      `Path.unlink`.
+    paths:
+      exclude:
+        - /src/xcp_storage/utils/file.py
+    pattern-either:
+      - pattern: "os.remove"
+      - pattern: "$OBJECT.unlink"

@@ -23,6 +23,7 @@ from unittest.mock import patch
 import pytest
 
 from xcp_storage.config.platform import RUNTIME_DIR_PATH
+from xcp_storage.utils.file import remove_file
 from xcp_storage.utils.process import CommandError, run_command
 from xcp_storage.utils.service import _EXEC_PATH_SYSTEMCTL, reload_service_conf
 
@@ -156,7 +157,7 @@ class ServiceManager(NamedTuple):
                 self._reload_units()
 
                 stack.callback(self._reload_units)
-                stack.callback(runtime_unit_path.unlink)
+                stack.callback(remove_file, runtime_unit_path)
 
             if not is_unit_template:
                 stack.callback(self._run_systemctl_command, ["stop", unit_name])

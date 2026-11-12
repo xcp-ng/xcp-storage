@@ -19,9 +19,16 @@ from unittest.mock import patch
 
 import pytest
 
-from xcp_storage.utils.file import close_fd, create_hard_link
+from xcp_storage.utils.file import close_fd, create_hard_link, remove_file
 
 # ==============================================================================
+
+@pytest.fixture
+def file_path(tmp_path: Path) -> Path:
+    # Not created.
+    return tmp_path / "file"
+
+# ------------------------------------------------------------------------------
 
 class TestCloseFd:
     def test_close(self) -> None:
@@ -79,3 +86,37 @@ class TestCreateHardLink:
         with pytest.raises(FileNotFoundError):
             create_hard_link(link_path, tmp_path / "target")
         assert not link_path.exists()
+
+# ------------------------------------------------------------------------------
+
+class TestRemoveFile:
+    @pytest.mark.parametrize("missing_ok", [False, True])
+    def test_remove(self, file_path: Path, *, missing_ok: bool) -> None:
+        file_path.write_text("data")
+        remove_file(file_path, missing_ok=missing_ok)
+        assert not file_path.exists()
+
+    def test_remove_symlink_only(self, tmp_path: Path) -> None:
+        target_path = tmp_path / "target"
+        target_path.write_text("data")
+
+        link_path = tmp_path / "link"
+        link_path.symlink_to(target_path)
+
+        remove_file(link_path)
+
+        assert not link_path.is_symlink()
+        assert target_path.read_text() == "data"
+
+    def test_remove_missing_file(self, file_path: Path) -> None:
+        with pytest.raises(FileNotFoundError):
+            remove_file(file_path)
+
+    def test_remove_missing_file_ok(self, file_path: Path) -> None:
+        remove_file(file_path, missing_ok=True)
+
+    @pytest.mark.parametrize("missing_ok", [False, True])
+    def test_remove_directory(self, tmp_path: Path, *, missing_ok: bool) -> None:
+        with pytest.raises(IsADirectoryError):
+            remove_file(tmp_path, missing_ok=missing_ok)
+        assert tmp_path.is_dir()

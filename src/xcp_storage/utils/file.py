@@ -14,7 +14,7 @@
 
 import contextlib
 import os
-from pathlib import PurePath
+from pathlib import Path, PurePath
 
 from xcp_storage.typing import Final
 
@@ -51,3 +51,16 @@ def create_hard_link(path: PurePath, target_path: PurePath) -> None:
 
     # TODO(XCPNG-3032): Use `Path.hardlink_to` in python 3.10.
     os.link(target_path, path)
+
+def remove_file(path: PurePath, *, missing_ok: bool = False) -> None:
+    """
+    Remove a file `path`. Cannot remove a directory.
+    `FileNotFoundError` is raised if it does not exist, unless `missing_ok`.
+    """
+
+    # TODO(XCPNG-3032): Use `Path.unlink(missing_ok=...)` in python 3.8.
+    try:
+        Path(path).unlink()
+    except FileNotFoundError:
+        if not missing_ok:
+            raise
