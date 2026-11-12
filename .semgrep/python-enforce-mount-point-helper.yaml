@@ -1,0 +1,14 @@
+rules:
+  - id: python-enforce-mount-point-helper
+    languages: [python]
+    severity: WARNING
+    message: >-
+      Test a mount point with `is_mount_point` from `xcp_storage.utils.file`, not directly with `os.path.ismount` or
+      `Path.is_mount`.
+    paths:
+      exclude:
+        - /src/xcp_storage/utils/file.py
+    pattern-either:
+      - pattern: "os.path.ismount"
+      - pattern: "posixpath.ismount"
+      - pattern: "$OBJECT.is_mount"
