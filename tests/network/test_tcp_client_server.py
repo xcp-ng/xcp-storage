@@ -123,6 +123,9 @@ class EchoServer(TcpServer):
             client.mark_idle()
 
             return True
+        except asyncio.CancelledError:
+            # TODO(XCPNG-3032): Workaround for python < 3.8, where `CancelledError` derives from `Exception`.
+            raise
         except Exception:
             return False
 
