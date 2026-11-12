@@ -42,3 +42,12 @@ def is_mount_point(path: PurePath) -> bool:
 
     # TODO(XCPNG-3032): Use `os.path` instead of `Path` for old python versions. Change me later.
     return os.path.ismount(path)
+
+def create_hard_link(path: PurePath, target_path: PurePath) -> None:
+    """
+    Create `path` as a hard link to the file `target_path`.
+    `FileExistsError` is raised if `path` exists.
+    """
+
+    # TODO(XCPNG-3032): Use `Path.hardlink_to` in python 3.10.
+    os.link(target_path, path)

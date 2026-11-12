@@ -1,0 +1,13 @@
+rules:
+  - id: python-enforce-hard-link-helper
+    languages: [python]
+    severity: WARNING
+    message: >-
+      Create a hard link with `create_hard_link` from `xcp_storage.utils.file`, not directly with `os.link` or
+      `Path.hardlink_to`.
+    paths:
+      exclude:
+        - /src/xcp_storage/utils/file.py
+    pattern-either:
+      - pattern: "os.link"
+      - pattern: "$OBJECT.hardlink_to"

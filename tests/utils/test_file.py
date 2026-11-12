@@ -14,11 +14,12 @@
 
 import errno
 import os
+from pathlib import Path
 from unittest.mock import patch
 
 import pytest
 
-from xcp_storage.utils.file import close_fd
+from xcp_storage.utils.file import close_fd, create_hard_link
 
 # ==============================================================================
 
@@ -44,3 +45,37 @@ class TestCloseFd:
         with patch("os.close", side_effect=OSError(error_code), autospec=True) as mock_close:
             close_fd(42)
         mock_close.assert_called_once_with(42)
+
+# ------------------------------------------------------------------------------
+
+class TestCreateHardLink:
+    def test_create(self, tmp_path: Path) -> None:
+        target_path = tmp_path / "target"
+        target_path.write_text("data")
+
+        link_path = tmp_path / "link"
+
+        create_hard_link(link_path, target_path)
+
+        assert link_path.read_text() == "data"
+        assert link_path.stat().st_ino == target_path.stat().st_ino
+        assert target_path.stat().st_nlink == 2
+
+    def test_existing_path(self, tmp_path: Path) -> None:
+        target_path = tmp_path / "target"
+        target_path.write_text("data")
+
+        link_path = tmp_path / "link"
+        link_path.write_text("other")
+
+        with pytest.raises(FileExistsError):
+            create_hard_link(link_path, target_path)
+
+        assert target_path.read_text() == "data"
+        assert link_path.read_text() == "other"
+
+    def test_missing_target(self, tmp_path: Path) -> None:
+        link_path = tmp_path / "link"
+        with pytest.raises(FileNotFoundError):
+            create_hard_link(link_path, tmp_path / "target")
+        assert not link_path.exists()
