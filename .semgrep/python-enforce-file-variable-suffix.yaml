@@ -24,6 +24,7 @@ rules:
                         - pattern: "tempfile.NamedTemporaryFile(...)"
                         - pattern: "tempfile.TemporaryFile(...)"
                         - pattern: "tempfile.SpooledTemporaryFile(...)"
+                        - pattern: "xcp_storage.utils.file.create_temporary_file(...)"
                         - pattern: "$SOCKET.makefile(...)"
                         - patterns:
                             - pattern: "$PATH.open(...)"
