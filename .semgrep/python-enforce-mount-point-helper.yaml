@@ -3,11 +3,11 @@ rules:
     languages: [python]
     severity: WARNING
     message: >-
-      Test a mount point with `is_mount_point` from `xcp_storage.utils.file`, not directly with `os.path.ismount` or
-      `Path.is_mount`.
+      Test a mount point with `is_mount_point` from `xcp_storage.utils.filesystem`, not directly with `os.path.ismount`
+      or `Path.is_mount`.
     paths:
       exclude:
-        - /src/xcp_storage/utils/file.py
+        - /src/xcp_storage/utils/filesystem.py
     pattern-either:
       - pattern: "os.path.ismount"
       - pattern: "posixpath.ismount"

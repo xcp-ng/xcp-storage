@@ -35,14 +35,6 @@ def close_fd(fd: int) -> None:
     with contextlib.suppress(OSError):
         os.close(fd)
 
-def is_mount_point(path: PurePath) -> bool:
-    """
-    Test if `path` is a mount point.
-    """
-
-    # TODO(XCPNG-3032): Use `os.path` instead of `Path` for old python versions. Change me later.
-    return os.path.ismount(path)
-
 def create_hard_link(path: PurePath, target_path: PurePath) -> None:
     """
     Create `path` as a hard link to the file `target_path`.

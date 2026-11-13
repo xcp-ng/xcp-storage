@@ -6,7 +6,7 @@ from os.path import ismount
 import posixpath
 from pathlib import Path, PurePath
 
-from xcp_storage.utils.file import is_mount_point
+from xcp_storage.utils.filesystem import is_mount_point
 
 # ------------------------------------------------------------------------------
 # `os.path` function: called, or passed as a function.
