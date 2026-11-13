@@ -1,5 +1,8 @@
 from pathlib import Path
 
+import xcp_storage.utils.file
+from xcp_storage.utils.file import create_temporary_directory, create_temporary_file
+
 # ------------------------------------------------------------------------------
 # Assigned an opened file: each way to open a file.
 # ------------------------------------------------------------------------------
@@ -18,6 +21,10 @@ handle5 = tempfile.TemporaryFile()
 handle6 = tempfile.SpooledTemporaryFile()
 # ruleid: python-enforce-file-variable-suffix
 handle7 = sock.makefile()
+# ruleid: python-enforce-file-variable-suffix
+handle9 = xcp_storage.utils.file.create_temporary_file(Path("/a"))
+# ruleid: python-enforce-file-variable-suffix
+handle10 = stack.enter_context(create_temporary_file(Path("/a")))
 # ok: python-enforce-file-variable-suffix
 handle8 = open_connection()
 # ok: python-enforce-file-variable-suffix
@@ -43,8 +50,17 @@ def read(lock_path: Path) -> None:
     # ruleid: python-enforce-file-variable-suffix
     with Path("/a").open() as stream2:
         pass
+    # ruleid: python-enforce-file-variable-suffix
+    with create_temporary_file(lock_path) as stream3:
+        pass
     # ok: python-enforce-file-variable-suffix
     lock_file = LOCK_PATH.open()
+    # ok: python-enforce-file-variable-suffix
+    with create_temporary_file(lock_path) as tmp_file:
+        pass
+    # ok: python-enforce-file-variable-suffix
+    with create_temporary_directory(lock_path) as stream4:
+        pass
     # ok: python-enforce-file-variable-suffix
     content = lock_name.open()
     # ok: python-enforce-file-variable-suffix
