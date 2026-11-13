@@ -25,7 +25,6 @@ from xcp_storage.network.socket import (
     SocketDisconnectedError,
     SocketError,
     SocketNotListeningError,
-    SocketTimeoutError,
 )
 from xcp_storage.utils.lock import (
     DEFAULT_LOCK_ACQUIRE_DURATION_THRESHOLD,
@@ -34,7 +33,12 @@ from xcp_storage.utils.lock import (
     LockError,
     ReadWriteHandleLock,
 )
-from xcp_storage.utils.service import escape_service_instance, ServiceError, start_service
+from xcp_storage.utils.service import (
+    escape_service_instance,
+    ServiceError,
+    start_service,
+    unescape_service_instance,
+)
 from xcp_storage.utils.time import Timer
 
 from xcp_storage.typing import (
@@ -79,6 +83,9 @@ _SERVICE_START_POLL_INTERVAL: Final = 0.01
 
 # ------------------------------------------------------------------------------
 
+# Time to wait in connect step to reach the UNIX server socket.
+# With a timeout, the connection never waits, it can only fails
+# at once with `SocketBusyError` instead of waiting for a free place.
 _MIN_CONNECT_TIMEOUT: Final = 0.01
 
 # The daemon answers asynchronously, even when the lock is free. So any finite timeout, including a single
@@ -113,7 +120,7 @@ class FifoLock(HandleLock):
         lock_duration_threshold: Optional[float] = DEFAULT_LOCK_DURATION_THRESHOLD
     ) -> None:
         if not _LOCK_NAME_REGEX.fullmatch(name):
-            raise ValueError(f"Invalid lock name `{name}`.")
+            raise ValueError(f"Invalid lock name: `{name}`.")
 
         self._socket: Optional[Socket] = None
 
@@ -123,7 +130,7 @@ class FifoLock(HandleLock):
             lock_duration_threshold=lock_duration_threshold
         )
         self._name = name
-        self._path = _LOCKS_DIR_PATH / name
+        self._path = self.get_lock_path(name)
 
     @property
     def name(self) -> str:
@@ -132,6 +139,22 @@ class FifoLock(HandleLock):
     @property
     def path(self) -> Path:
         return self._path
+
+    @staticmethod
+    def get_lock_path(lock_name: str) -> Path:
+        return _LOCKS_DIR_PATH / lock_name
+
+    @staticmethod
+    def get_service_name(lock_name: str) -> str:
+        return _LOCK_SERVICE_NAME_FORMAT.format(escape_service_instance(lock_name))
+
+    @staticmethod
+    def get_lock_name(service_name: str) -> str:
+        prefix, suffix = _LOCK_SERVICE_NAME_FORMAT.split("{}")
+        lock_name = unescape_service_instance(service_name[len(prefix):-len(suffix)])
+        if not _LOCK_NAME_REGEX.fullmatch(lock_name) or FifoLock.get_service_name(lock_name) != service_name:
+            raise ValueError(f"Invalid lock service name: `{service_name}`.")
+        return lock_name
 
     @override
     def _is_acquired(self) -> bool:
@@ -208,8 +231,6 @@ class FifoLock(HandleLock):
                 socket = Socket(create_unix_client_sock(self._path, timeout=timeout))
                 socket.timeout = None # Reset timeout. We must have a blocking socket after this point.
                 return socket
-            except SocketTimeoutError:
-                return None
             except SocketNotListeningError as e:
                 if service_start_timer is None:
                     self._start_service(service_name)
@@ -232,10 +253,6 @@ class FifoLock(HandleLock):
             start_service(service_name)
         except ServiceError as e:
             raise LockError(f"Unable to start lock service `{service_name}`.") from e
-
-    @staticmethod
-    def get_service_name(lock_name: str) -> str:
-        return _LOCK_SERVICE_NAME_FORMAT.format(escape_service_instance(lock_name))
 
 # ------------------------------------------------------------------------------
 

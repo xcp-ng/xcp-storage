@@ -31,6 +31,7 @@ from xcp_storage.utils.service import (
     start_service,
     stop_service,
     try_restart_service,
+    unescape_service_instance,
 )
 
 from xcp_storage.typing import Final, Iterator, List
@@ -48,9 +49,15 @@ def mock_run_command() -> Iterator[MagicMock]:
 
 # ------------------------------------------------------------------------------
 
-def test_escape_service_instance() -> None:
-    assert escape_service_instance("target") == "target"
-    assert escape_service_instance("target-x") == "target\\x2dx"
+class TestServiceInstanceEscape:
+    def test_escape_service_instance(self) -> None:
+        assert escape_service_instance("target") == "target"
+        assert escape_service_instance("target-x") == "target\\x2dx"
+
+    def test_unescape_service_instance(self) -> None:
+        assert unescape_service_instance("target") == "target"
+        assert unescape_service_instance("target\\x2dx") == "target-x"
+        assert unescape_service_instance(escape_service_instance("a-b-c")) == "a-b-c"
 
 # ------------------------------------------------------------------------------
 
