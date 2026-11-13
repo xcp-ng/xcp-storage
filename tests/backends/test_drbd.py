@@ -43,6 +43,7 @@ from xcp_storage.backends.drbd import (
     DrbdRole,
 )
 import xcp_storage.log as log
+from xcp_storage.utils.process import CommandResult
 
 from xcp_storage.typing import (
     Any,
@@ -120,7 +121,7 @@ def test_get_drbd_name_from_path(path: StrPath, expected_name: str) -> None:
 
 class TestGetDrbdStatus:
     def test_success(self, mock_run_command: MagicMock, drbd_json_status_primary: str) -> None:
-        mock_run_command.return_value = (drbd_json_status_primary, "", 0)
+        mock_run_command.return_value = CommandResult(stdout=drbd_json_status_primary)
 
         status = _get_drbd_status(TEST_DRBD_RESOURCE_NAME)
 
@@ -133,7 +134,9 @@ class TestGetDrbdStatus:
         )
 
     def test_command_failure(self, mock_run_command: MagicMock, caplog: pytest.LogCaptureFixture) -> None:
-        mock_run_command.return_value = ("[]", "xcp-volume-frite: No such resource\n", 10)
+        mock_run_command.return_value = CommandResult(
+            stdout="[]", stderr="xcp-volume-frite: No such resource\n", ret_code=10
+        )
         with caplog.at_level(log.INFO):
             assert _get_drbd_status("xcp-volume-frite") == {}
         assert (
@@ -154,13 +157,13 @@ class TestGetDrbdStatus:
     def test_malformed_json(
         self, mock_run_command: MagicMock, caplog: pytest.LogCaptureFixture, stdout: str
     ) -> None:
-        mock_run_command.return_value = (stdout, "", 0)
+        mock_run_command.return_value = CommandResult(stdout=stdout)
         with caplog.at_level(log.INFO):
             assert _get_drbd_status(TEST_DRBD_RESOURCE_NAME) == {}
         assert "Failed to read DRBD status of resource `xcp-volume-patate` as JSON" in caplog.text
 
     def test_empty_list(self, mock_run_command: MagicMock, caplog: pytest.LogCaptureFixture) -> None:
-        mock_run_command.return_value = ("[]", "", 0)
+        mock_run_command.return_value = CommandResult(stdout="[]")
         with caplog.at_level(log.INFO):
             assert _get_drbd_status(TEST_DRBD_RESOURCE_NAME) == {}
         assert "Failed to parse DRBD configuration" in caplog.text
@@ -171,23 +174,23 @@ class TestGetDrbdConnectionAddress:
     def test_connection_address_a(
         self, mock_run_command: MagicMock, drbd_json_status_primary: str
     ) -> None:
-        mock_run_command.return_value = (drbd_json_status_primary, "", 0)
+        mock_run_command.return_value = CommandResult(stdout=drbd_json_status_primary)
         assert Drbd.get_connection_address(TEST_DRBD_RESOURCE_NAME, TEST_DRBD_SECONDARY_NODE_NAME) == \
             TEST_DRBD_SECONDARY_NODE_ADDRESS
 
     def test_connection_address_b(
         self, mock_run_command: MagicMock, drbd_json_status_secondary: str
     ) -> None:
-        mock_run_command.return_value = (drbd_json_status_secondary, "", 0)
+        mock_run_command.return_value = CommandResult(stdout=drbd_json_status_secondary)
         assert Drbd.get_connection_address(TEST_DRBD_RESOURCE_NAME, TEST_DRBD_PRIMARY_NODE_NAME) == \
             TEST_DRBD_PRIMARY_NODE_ADDRESS
 
     def test_unknown_node(self, mock_run_command: MagicMock, drbd_json_status_primary: str) -> None:
-        mock_run_command.return_value = (drbd_json_status_primary, "", 0)
+        mock_run_command.return_value = CommandResult(stdout=drbd_json_status_primary)
         assert Drbd.get_connection_address(TEST_DRBD_RESOURCE_NAME, "sr123-s67") == ""
 
     def test_status_error(self, mock_run_command: MagicMock) -> None:
-        mock_run_command.return_value = ("", "xcp-volume-frite: No such resource\n", 10)
+        mock_run_command.return_value = CommandResult(stderr="xcp-volume-frite: No such resource\n", ret_code=10)
         assert Drbd.get_connection_address("xcp-volume-frite", TEST_DRBD_SECONDARY_NODE_NAME) == ""
 
 # ------------------------------------------------------------------------------
@@ -196,17 +199,17 @@ class TestGetDrbdPrimaryAddress:
     def test_primary_local(
         self, mock_run_command: MagicMock, drbd_json_status_primary: str
     ) -> None:
-        mock_run_command.return_value = (drbd_json_status_primary, "", 0)
+        mock_run_command.return_value = CommandResult(stdout=drbd_json_status_primary)
         assert Drbd.get_primary_address(TEST_DRBD_RESOURCE_NAME) == TEST_DRBD_PRIMARY_NODE_ADDRESS
 
     def test_primary_remote(
         self, mock_run_command: MagicMock, drbd_json_status_secondary: str
     ) -> None:
-        mock_run_command.return_value = (drbd_json_status_secondary, "", 0)
+        mock_run_command.return_value = CommandResult(stdout=drbd_json_status_secondary)
         assert Drbd.get_primary_address(TEST_DRBD_RESOURCE_NAME) == TEST_DRBD_PRIMARY_NODE_ADDRESS
 
     def test_status_error(self, mock_run_command: MagicMock) -> None:
-        mock_run_command.return_value = ("", "xcp-volume-frite: No such resource\n", 10)
+        mock_run_command.return_value = CommandResult(stderr="xcp-volume-frite: No such resource\n", ret_code=10)
         assert Drbd.get_primary_address("xcp-volume-frite") == ""
 
 # ------------------------------------------------------------------------------
@@ -246,7 +249,7 @@ class TestIsDrbdHealthy:
             for path_key in path:
                 status_object = status_object[path_key]
             status_object[name] = value
-        mock_run_command.return_value = (json.dumps(status), "", 0)
+        mock_run_command.return_value = CommandResult(stdout=json.dumps(status))
 
     @pytest.mark.parametrize("fields", [
         (),
@@ -287,12 +290,12 @@ class TestIsDrbdHealthy:
     def test_invalid_status(self, mock_run_command: MagicMock, drbd_json_status_primary: str) -> None:
         status = json.loads(drbd_json_status_primary)
         del status[0]["devices"]
-        mock_run_command.return_value = (json.dumps(status), "", 0)
+        mock_run_command.return_value = CommandResult(stdout=json.dumps(status))
 
         assert not Drbd.is_healthy(TEST_DRBD_RESOURCE_NAME)
 
     def test_status_error(self, mock_run_command: MagicMock) -> None:
-        mock_run_command.return_value = ("", "xcp-volume-frite: No such resource\n", 10)
+        mock_run_command.return_value = CommandResult(stderr="xcp-volume-frite: No such resource\n", ret_code=10)
         assert not Drbd.is_healthy("xcp-volume-frite")
 
 # ------------------------------------------------------------------------------
@@ -411,7 +414,7 @@ class TestGetDrbdLocalOpeners:
 
 class TestDemoteDrbd:
     def test_success(self, mock_run_command: MagicMock) -> None:
-        mock_run_command.return_value = ("", "", 0)
+        mock_run_command.return_value = CommandResult()
         assert Drbd.demote("res-test")
 
     def test_command_not_found(self, mock_run_command: MagicMock, caplog: pytest.LogCaptureFixture) -> None:
@@ -434,7 +437,7 @@ class TestDemoteDrbd:
             "drbd1261 opened by python (pid 483388) at 2026-06-30 21:15:38.690\n"
             "drbd1261 opened by python (pid 482584) at 2026-06-30 21:14:14.425\n"
         )
-        mock_run_command.return_value = ("", stderr, 11)
+        mock_run_command.return_value = CommandResult(stderr=stderr, ret_code=11)
 
         with caplog.at_level(log.INFO):
             assert not Drbd.demote("res-test")
