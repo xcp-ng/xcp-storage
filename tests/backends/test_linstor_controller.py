@@ -23,7 +23,7 @@ import pytest
 from tests.backends.linstor import LinstorServiceSpec, LinstorServiceTests
 from tests.utils.exception import raises_exactly
 from xcp_storage.backends.linstor.controller import (
-    _SERVICE_LINSTOR_CONTROLLER,
+    LINSTOR_CONTROLLER_SERVICE,
     LINSTOR_URI_PREFIX,
     LinstorController,
 )
@@ -49,7 +49,7 @@ from xcp_storage.typing import (
 _LINSTOR_CONTROLLER_MODULE: Final = LinstorController.__module__
 
 LINSTOR_CONTROLLER_SERVICE_SPEC: Final = LinstorServiceSpec(
-    LinstorController, _SERVICE_LINSTOR_CONTROLLER, ("start", "stop", "restart")
+    LinstorController, LINSTOR_CONTROLLER_SERVICE, ("start", "stop", "restart")
 )
 
 # ------------------------------------------------------------------------------
