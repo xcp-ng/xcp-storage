@@ -25,6 +25,7 @@ import re
 import xcp_storage.log as log
 from xcp_storage.utils.check import check_non_negative_int, check_regex_match
 from xcp_storage.utils.process import (
+    CommandResult,
     get_process_cmdline,
     run_command,
 )
@@ -36,7 +37,6 @@ from xcp_storage.typing import (
     Iterator,
     List,
     StrPath,
-    Tuple,
 )
 
 # ==============================================================================
@@ -158,7 +158,7 @@ def _handle_drbd_json_error() -> Iterator[None]:
 
 # ------------------------------------------------------------------------------
 
-def _run_drbdsetup_command(*args: str) -> Tuple[str, str, int]:
+def _run_drbdsetup_command(*args: str) -> CommandResult:
     return run_command([_EXEC_PATH_DRBDSETUP, *args], simple=False, timeout=_DRBDSETUP_TIMEOUT)
 
 # ------------------------------------------------------------------------------

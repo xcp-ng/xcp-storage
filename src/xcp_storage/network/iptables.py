@@ -13,7 +13,7 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 from xcp_storage.config.platform import DEFAULT_FIREWALL_INPUT_CHAIN
-from xcp_storage.utils.process import CommandError, run_command
+from xcp_storage.utils.process import CommandError, CommandResult, run_command
 
 from xcp_storage.typing import (
     Final,
@@ -51,7 +51,7 @@ def _save_iptables_changes() -> None:
 def _run_iptables_command(flag: str, rule: List[str]) -> None:
     run_command([_EXEC_PATH_IPTABLES, flag] + rule, expected_ret_code=0)
 
-def _try_iptables_command(flag: str, rule: List[str]) -> Tuple[str, str, int]:
+def _try_iptables_command(flag: str, rule: List[str]) -> CommandResult:
     return run_command([_EXEC_PATH_IPTABLES, flag] + rule, simple=False)
 
 # ------------------------------------------------------------------------------
