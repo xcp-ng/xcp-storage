@@ -1,0 +1,25 @@
+rules:
+  - id: python-enforce-tmp-path-fixture-suffix
+    languages: [python]
+    severity: WARNING
+    message: "Fixture `$FIXTURE` redirects a path to `tmp_path`: it must be named `path` or `fs`, or end with `_path` or `_fs`."
+    patterns:
+      - pattern: |
+          @pytest.fixture(...)
+          def $FIXTURE(..., tmp_path, ...):
+              $...BODY
+      # Its body replaces a path constant (`*_PATH`, not `_EXEC_PATH_*`), at any depth (`with patch(...):`).
+      - metavariable-pattern:
+          metavariable: $...BODY
+          patterns:
+            - pattern-either:
+                - pattern: "unittest.mock.patch($TARGET, ...)"
+                - pattern: "unittest.mock.patch.object($OBJECT, $TARGET, ...)"
+            # Anchored at the start: `.*` skips the module of the target, plain or f-string.
+            - metavariable-regex:
+                metavariable: $TARGET
+                regex: '^.*_PATH[''"]?$'
+      - focus-metavariable: $FIXTURE
+      - metavariable-regex:
+          metavariable: $FIXTURE
+          regex: '^(?!(?i:(?:\w*_)?(?:path|fs))$)\w+$'

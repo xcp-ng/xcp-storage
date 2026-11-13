@@ -30,7 +30,7 @@ from xcp_storage.utils.contextlib import scoped_factory
 from xcp_storage.typing import (
     Callable,
     Final,
-    Generator,
+    Iterator,
     Optional,
 )
 
@@ -49,7 +49,7 @@ CLIENT_TIMEOUT: Final = 1.0
 def rpc_server(
     request: pytest.FixtureRequest,
     ssl_contexts: Optional[TlsContexts] # noqa: F811
-) -> Generator[RpcApiServer, None, None]:
+) -> Iterator[RpcApiServer]:
     server_class = getattr(request, "param", RpcApiServer)
     server = server_class("127.0.0.1", 0, ssl_context=ssl_contexts.server if ssl_contexts else None)
     with create_thread_group(join_timeout=SERVER_THREAD_SHUTDOWN_TIMEOUT) as thread_group:
@@ -66,7 +66,7 @@ RpcClientFactory = Callable[..., RpcApiClient]
 def rpc_client_factory(
     rpc_server: RpcApiServer,
     client_ssl_context: Optional[ssl.SSLContext] # noqa: F811
-) -> Generator[RpcClientFactory, None, None]:
+) -> Iterator[RpcClientFactory]:
     def create(*, client_timeout: float = CLIENT_TIMEOUT) -> RpcApiClient:
         return RpcApiClient(
             rpc_server.address,

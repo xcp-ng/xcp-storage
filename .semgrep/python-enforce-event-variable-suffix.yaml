@@ -1,0 +1,46 @@
+rules:
+  - id: python-enforce-event-variable-suffix
+    languages: [python]
+    severity: WARNING
+    message: "Event variable `$VARIABLE` must be named `event` or end with `_event`."
+    patterns:
+      - pattern-either:
+          # Created as an event: `x = threading.Event()`, `x = context.Event()` (multiprocessing), `x = asyncio.Event()`.
+          - patterns:
+              - pattern-either:
+                  - pattern: "$VARIABLE = $CLASS(...)"
+                  - pattern: "self.$VARIABLE = $CLASS(...)"
+              - metavariable-regex:
+                  metavariable: $CLASS
+                  regex: '^(?:\w+\.)*Event$'
+          # Declared as an event: `x: threading.Event`, `x: "multiprocessing.synchronize.Event"`.
+          - patterns:
+              - pattern-either:
+                  - pattern: "$VARIABLE: $TYPE"
+                  - pattern: "$VARIABLE: $TYPE = ..."
+                  - pattern: "self.$VARIABLE: $TYPE = ..."
+                  - pattern: |
+                      def $FUNCTION(..., $VARIABLE: $TYPE, ...):
+                          ...
+              # Quotes: a forward reference (`"multiprocessing.synchronize.Event"`, not importable at runtime).
+              - metavariable-regex:
+                  metavariable: $TYPE
+                  regex: |-
+                    (?x)
+                    (?(DEFINE)
+                        (?<EVENT_TYPE>
+                            ["']?(?:\w+\.)*Event["']?
+                        )
+                    )
+                    ^(?:
+                        (?&EVENT_TYPE)
+                      | Optional\[\s*(?&EVENT_TYPE)\s*\]
+                      | Final\[\s*(?&EVENT_TYPE)\s*\]
+                      | Union\[.*\b(?&EVENT_TYPE)(?!\w).*\]
+                      | (?&EVENT_TYPE)\s*\|\s*None
+                      | None\s*\|\s*(?&EVENT_TYPE)
+                    )$
+      - focus-metavariable: $VARIABLE
+      - metavariable-regex:
+          metavariable: $VARIABLE
+          regex: '^(?!(?i:(?:\w*_)?event)$)\w+$'

@@ -1,0 +1,18 @@
+rules:
+  - id: python-forbid-hard-coded-patch-module
+    languages: [python]
+    severity: WARNING
+    message: "Patch target with a hard-coded project module: use a `_<NAME>_MODULE = X.__module__` constant instead (`X` being the function or class that reads the patched name), or use `patch.object` when a object exists."
+    patterns:
+      - pattern-either:
+          - pattern: "unittest.mock.patch($TARGET, ...)"
+          - pattern: "unittest.mock.patch(..., target=$TARGET, ...)"
+          - pattern: "unittest.mock.patch.multiple($TARGET, ...)"
+          - pattern: "unittest.mock.patch.multiple(..., target=$TARGET, ...)"
+          - pattern: "unittest.mock.patch.dict($TARGET, ...)"
+          - pattern: "unittest.mock.patch.dict(..., in_dict=$TARGET, ...)"
+      # Source text of the target: a string (prefix `f`, `r`... included) or a concatenation that starts with the
+      # project package.
+      - metavariable-regex:
+          metavariable: $TARGET
+          regex: '^\w*["'']+xcp_storage\b'

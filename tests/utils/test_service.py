@@ -37,9 +37,13 @@ from xcp_storage.typing import Final, Iterator, List
 
 # ==============================================================================
 
+_SERVICE_MODULE: Final = reload_service_conf.__module__
+
+# ------------------------------------------------------------------------------
+
 @pytest.fixture
 def mock_run_command() -> Iterator[MagicMock]:
-    with patch("xcp_storage.utils.service.run_command", autospec=True) as mock_run_command:
+    with patch(f"{_SERVICE_MODULE}.run_command", autospec=True) as mock_run_command:
         yield mock_run_command
 
 # ------------------------------------------------------------------------------

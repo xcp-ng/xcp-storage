@@ -2,11 +2,15 @@ rules:
   - id: python-enforce-pytest-raises-variable-suffix
     languages: [python]
     severity: WARNING
-    message: "Variable `$VARIABLE` of `pytest.raises` must be named `exc_info` or end with `_exc_info`."
+    message: "Variable `$VARIABLE` of `pytest.raises` (or `raises_exactly`) must be named `exc_info` or end with `_exc_info`."
     patterns:
-      - pattern: |
-          with pytest.raises(...) as $VARIABLE:
-              ...
+      - pattern-either:
+          - pattern: |
+              with pytest.raises(...) as $VARIABLE:
+                  ...
+          - pattern: |
+              with tests.utils.exception.raises_exactly(...) as $VARIABLE:
+                  ...
       - focus-metavariable: $VARIABLE
       - metavariable-regex:
           metavariable: $VARIABLE

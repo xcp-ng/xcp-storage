@@ -44,14 +44,18 @@ from xcp_storage.typing import (
 
 # ==============================================================================
 
+_DRBD_MODULE: Final = Drbd.__module__
+
+# ------------------------------------------------------------------------------
+
 @pytest.fixture
 def mock_run_command() -> Iterator[MagicMock]:
-    with patch("xcp_storage.backends.drbd.run_command", autospec=True) as mock_run_command:
+    with patch(f"{_DRBD_MODULE}.run_command", autospec=True) as mock_run_command:
         yield mock_run_command
 
 @pytest.fixture
 def mock_get_process_cmdline() -> Iterator[MagicMock]:
-    with patch("xcp_storage.backends.drbd.get_process_cmdline", autospec=True) as mock_get_process_cmdline:
+    with patch(f"{_DRBD_MODULE}.get_process_cmdline", autospec=True) as mock_get_process_cmdline:
         yield mock_get_process_cmdline
 
 # ------------------------------------------------------------------------------

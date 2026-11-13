@@ -1,0 +1,29 @@
+rules:
+  - id: python-enforce-spy-variable-prefix
+    languages: [python]
+    severity: WARNING
+    message: "Spy variable `$VARIABLE` must use `spy_` prefix."
+    patterns:
+      - pattern-either:
+          # Patch used as a context manager.
+          - pattern: |
+              with unittest.mock.patch(..., wraps=$WRAPPED, ...) as $VARIABLE:
+                  ...
+          - pattern: |
+              with unittest.mock.patch.object(..., wraps=$WRAPPED, ...) as $VARIABLE:
+                  ...
+          # Patch started by hand, or entered in an `ExitStack`.
+          - pattern: "$VARIABLE = unittest.mock.patch(..., wraps=$WRAPPED, ...).start()"
+          - pattern: "$VARIABLE = unittest.mock.patch.object(..., wraps=$WRAPPED, ...).start()"
+          - pattern: "$VARIABLE = $STACK.enter_context(unittest.mock.patch(..., wraps=$WRAPPED, ...))"
+          - pattern: "$VARIABLE = $STACK.enter_context(unittest.mock.patch.object(..., wraps=$WRAPPED, ...))"
+          # Mock created directly.
+          - patterns:
+              - pattern: "$VARIABLE = unittest.mock.$MOCK(..., wraps=$WRAPPED, ...)"
+              - metavariable-regex:
+                  metavariable: $MOCK
+                  regex: '^(?:(?:NonCallable)?(?:Magic)?Mock|AsyncMock|create_autospec)$'
+      - focus-metavariable: $VARIABLE
+      - metavariable-regex:
+          metavariable: $VARIABLE
+          regex: '^(?!spy_)\w+$'

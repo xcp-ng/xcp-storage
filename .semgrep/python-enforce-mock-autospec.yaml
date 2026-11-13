@@ -1,0 +1,22 @@
+rules:
+  - id: python-enforce-mock-autospec
+    languages: [python]
+    severity: WARNING
+    message: "Mock created without `autospec=`, it must be set to `True`, so that its calls and attributes are checked against the real object."
+    patterns:
+      - pattern-either:
+          - pattern: "unittest.mock.patch($TARGET, ...)"
+          - pattern: "unittest.mock.patch.object($OBJECT, $ATTRIBUTE, ...)"
+          # Mocks created for the attributes set to `DEFAULT` (the others are replaced by a value).
+          - pattern: "unittest.mock.patch.multiple($TARGET, ..., $NAME=unittest.mock.DEFAULT, ...)"
+      # Replaced by a value (positional `new` or `new=`): not a mock.
+      - pattern-not: "unittest.mock.patch($TARGET, $NEW, ...)"
+      - pattern-not: "unittest.mock.patch.object($OBJECT, $ATTRIBUTE, $NEW, ...)"
+      - pattern-not: "$FUNCTION(..., new=$NEW, ...)"
+      # Attribute created by the patch: no real object to check against.
+      - pattern-not: "$FUNCTION(..., create=True, ...)"
+      # Mock class chosen by the test (`PropertyMock`...): `autospec` can't be combined with it.
+      - pattern-not: "$FUNCTION(..., new_callable=$NEW_CALLABLE, ...)"
+      # A spy (`wraps=`) runs the real code.
+      - pattern-not: "$FUNCTION(..., wraps=$WRAPPED, ...)"
+      - pattern-not: "$FUNCTION(..., autospec=True, ...)"
