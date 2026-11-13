@@ -15,6 +15,13 @@ rules:
               - metavariable-regex:
                   metavariable: $CLASS
                   regex: '^(?:Pure)?(?:Posix|Windows)?Path$'
+          # Assigned a path by an XCP helper: `with create_temporary_directory(...) as x`.
+          - pattern-either:
+              - pattern: |
+                  with xcp_storage.utils.file.create_temporary_directory(...) as $VARIABLE:
+                      ...
+              - pattern: "$VARIABLE = $STACK.enter_context(xcp_storage.utils.file.create_temporary_directory(...))"
+              - pattern: "self.$VARIABLE = $STACK.enter_context(xcp_storage.utils.file.create_temporary_directory(...))"
           # Derived from a path variable: `x = base_path / "y"`.
           - patterns:
               - pattern-either:

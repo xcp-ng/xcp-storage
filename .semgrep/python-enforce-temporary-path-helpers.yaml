@@ -1,0 +1,19 @@
+rules:
+  - id: python-enforce-temporary-path-helpers
+    languages: [python]
+    severity: WARNING
+    message: >-
+      Create a temporary file or directory with `create_temporary_file` or `create_temporary_directory` from
+      `xcp_storage.utils.file`, not directly with `tempfile` or under a `.tmp` name built by hand.
+    paths:
+      exclude:
+        - /src/xcp_storage/utils/file.py
+    pattern-either:
+      # `tempfile` function creating a file or a directory: called, or passed as a function.
+      - patterns:
+          - pattern: "tempfile.$FUNCTION"
+          - metavariable-regex:
+              metavariable: $FUNCTION
+              regex: '^(?:mk[sd]?temp|(?:Named|Spooled)?TemporaryFile|TemporaryDirectory)$'
+      # Temporary name built by hand: a string ending with `.tmp` (f-strings included, which `"..."` does not match).
+      - pattern-regex: '\.tmp["'']'
