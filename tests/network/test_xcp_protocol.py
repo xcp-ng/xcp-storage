@@ -21,7 +21,7 @@ from xcp_storage.network.protocol import Protocol, ProtocolError
 from xcp_storage.network.protocol.xcp import XcpProtocol
 from xcp_storage.network.socket import SocketDisconnectedError, SocketPair
 
-from xcp_storage.typing import Final
+from xcp_storage.typing import Final, Iterator
 
 # ==============================================================================
 
@@ -60,6 +60,14 @@ def build_packet_header(
     return struct.pack(XcpProtocol.HEADER_FORMAT, magic, version, message_type, 0, seq, payload_size, 0)
 
 class TestXcpPacket:
+    TOO_LARGE_PAYLOAD: Final = b"1234"
+
+    @pytest.fixture
+    def short_max_packet_size(self) -> Iterator[None]:
+        max_packet_size = XcpProtocol.HEADER_SIZE + len(self.TOO_LARGE_PAYLOAD) - 1
+        with patch.object(XcpProtocol, "MAX_PACKET_SIZE", max_packet_size):
+            yield
+
     @pytest.mark.parametrize(("header", "message"), [
         (build_packet_header(magic=b"@BAD"), "Invalid magic value!"),
         (build_packet_header(version=XcpProtocol.VERSION + 1), "Invalid protocol version!"),
@@ -83,16 +91,16 @@ class TestXcpPacket:
         assert decoded.seq == TEST_DEFAULT_SEQ
         assert decoded.payload_size == len(payload)
 
+    @pytest.mark.usefixtures("short_max_packet_size")
     def test_too_large_packet(self) -> None:
-        payload = b"1234"
-        with patch.object(XcpProtocol, "MAX_PACKET_SIZE", XcpProtocol.HEADER_SIZE + len(payload) - 1), \
-            pytest.raises(ProtocolError, match="Packet is too large!"):
-            XcpProtocol().create_packet(Protocol.MessageType.REQUEST, TEST_DEFAULT_SEQ, payload)
+        with pytest.raises(ProtocolError, match="Packet is too large!"):
+            XcpProtocol().create_packet(Protocol.MessageType.REQUEST, TEST_DEFAULT_SEQ, self.TOO_LARGE_PAYLOAD)
 
     def test_incompatible_payload_size(self) -> None:
-        packet = XcpProtocol.Packet.from_header(build_packet_header(payload_size=3))
+        payload = b"12"
+        packet = XcpProtocol.Packet.from_header(build_packet_header(payload_size=len(payload) + 1))
         with pytest.raises(ProtocolError, match="Incompatible payload size.") as exc_info:
-            packet.set_payload(b"12")
+            packet.set_payload(payload)
         assert exc_info.value.seq == TEST_DEFAULT_SEQ
 
 # ------------------------------------------------------------------------------

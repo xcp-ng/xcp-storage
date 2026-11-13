@@ -318,12 +318,12 @@ class TcpServer(ABC):
 
     @abstractmethod
     async def _handle_client_connect(self, client: Client) -> bool:
-        return False
+        pass # pragma: no cover
 
     @abstractmethod
     async def _handle_client_disconnect(self, client: Client) -> None:
-        pass
+        pass # pragma: no cover
 
     @abstractmethod
     async def _handle_client_request(self, client: Client) -> bool:
-        return False
+        pass # pragma: no cover

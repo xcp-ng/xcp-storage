@@ -193,7 +193,7 @@ class TestFileLock:
     def test_flock_error(self, lock_path: Path, lock_factory: LockFactory, timeout: Optional[float]) -> None:
         lock = lock_factory(lock_path)
         exception_message = f"Unable to lock on `{lock_path}`."
-        with patch("fcntl.flock", side_effect=OSError(errno.EIO, "")), \
+        with patch("fcntl.flock", side_effect=OSError(errno.EIO, ""), autospec=True), \
                 pytest.raises(LockError, match=exception_message):
             lock.acquire(timeout=timeout)
 

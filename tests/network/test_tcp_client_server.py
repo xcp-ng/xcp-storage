@@ -40,6 +40,7 @@ from xcp_storage.typing import (
     cast,
     Final,
     Generator,
+    Iterator,
     Optional,
     override,
 )
@@ -442,8 +443,13 @@ class TestTcpClientServer:
 
         assert not tcp_client.connected
 
+    @pytest.fixture
+    def short_tls_shutdown_timeout(self) -> Iterator[None]:
+        with patch("xcp_storage.utils.asyncio._TLS_SHUTDOWN_TIMEOUT", TLS_SHUTDOWN_TIMEOUT):
+            yield
+
     @pytest.mark.parametrize("tcp_server", [RejectConnectionServer], indirect=True)
-    @patch("xcp_storage.utils.asyncio._TLS_SHUTDOWN_TIMEOUT", TLS_SHUTDOWN_TIMEOUT)
+    @pytest.mark.usefixtures("short_tls_shutdown_timeout")
     def test_client_send_to_closed_peer(self, tcp_client_factory: TcpClientFactory) -> None:
         tcp_client = tcp_client_factory()
         tcp_client.connect()

@@ -77,6 +77,11 @@ def _check_drbd_volume_number(volume_number: int) -> None:
 
 # ------------------------------------------------------------------------------
 
+def _get_drbd_debug_resource_openers_path(resource_name: str, volume_number: int) -> Path:
+    return _DRBD_DEBUG_RESOURCES_PATH / resource_name / "volumes" / str(volume_number) / "openers"
+
+# ------------------------------------------------------------------------------
+
 @contextlib.contextmanager
 def _handle_drbd_json_error() -> Iterator[None]:
     """
@@ -200,7 +205,7 @@ class Drbd:
         _check_drbd_resource_name(resource_name)
         _check_drbd_volume_number(volume_number)
 
-        path = _DRBD_DEBUG_RESOURCES_PATH / resource_name / "volumes" / str(volume_number) / "openers"
+        path = _get_drbd_debug_resource_openers_path(resource_name, volume_number)
         try:
             lines = path.read_text().splitlines()
         except Exception as e:

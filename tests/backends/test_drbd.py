@@ -20,10 +20,11 @@ from unittest.mock import (
 
 import pytest
 
+from tests.backends.drbd import DrbdDebugFs
 from xcp_storage.backends.drbd import (
-    _DRBD_DEBUG_RESOURCES_PATH,
     _DRBDSETUP_TIMEOUT,
     _EXEC_PATH_DRBDSETUP,
+    _get_drbd_debug_resource_openers_path,
     _get_drbd_status,
     Drbd,
     DRBD_BY_RES_PATH,
@@ -36,11 +37,24 @@ from xcp_storage.typing import (
     Any,
     Dict,
     Final,
+    Iterator,
     List,
     StrPath,
 )
 
 # ==============================================================================
+
+@pytest.fixture
+def mock_run_command() -> Iterator[MagicMock]:
+    with patch("xcp_storage.backends.drbd.run_command", autospec=True) as mock_run_command:
+        yield mock_run_command
+
+@pytest.fixture
+def mock_get_process_cmdline() -> Iterator[MagicMock]:
+    with patch("xcp_storage.backends.drbd.get_process_cmdline", autospec=True) as mock_get_process_cmdline:
+        yield mock_get_process_cmdline
+
+# ------------------------------------------------------------------------------
 
 @pytest.mark.parametrize("resource_name, volume_number, expected_path", [
     ("volume", 0, DRBD_BY_RES_PATH / "volume" / "0"),
@@ -87,7 +101,6 @@ def test_get_drbd_name_from_path(path: StrPath, expected_name: str) -> None:
 
 # ------------------------------------------------------------------------------
 
-@patch("xcp_storage.backends.drbd.run_command")
 class TestGetDrbdStatus:
     def test_success(self, mock_run_command: MagicMock, drbd_json_status_primary: str) -> None:
         mock_run_command.return_value = (drbd_json_status_primary, "", 0)
@@ -135,7 +148,6 @@ class TestGetDrbdStatus:
 
 # ------------------------------------------------------------------------------
 
-@patch("xcp_storage.backends.drbd.run_command")
 class TestGetDrbdConnectionAddress:
     def test_connection_address_a(
         self, mock_run_command: MagicMock, drbd_json_status_primary: str
@@ -159,7 +171,6 @@ class TestGetDrbdConnectionAddress:
 
 # ------------------------------------------------------------------------------
 
-@patch("xcp_storage.backends.drbd.run_command")
 class TestGetDrbdPrimaryAddress:
     def test_primary_local(
         self, mock_run_command: MagicMock, drbd_json_status_primary: str
@@ -179,10 +190,8 @@ class TestGetDrbdPrimaryAddress:
 
 # ------------------------------------------------------------------------------
 
-@patch.object(Path, "read_text")
 class TestGetDrbdLocalOpeners:
-    @patch("xcp_storage.backends.drbd.get_process_cmdline")
-    def test_multi_openers(self, mock_get_cmdline: MagicMock, mock_read_text: MagicMock) -> None:
+    def test_multi_openers(self, drbd_debug_fs: DrbdDebugFs, mock_get_process_cmdline: MagicMock) -> None:
         data: List[Dict[str, Any]] = [{
             "pid": 482584,
             "process_name": "tapback",
@@ -198,15 +207,15 @@ class TestGetDrbdLocalOpeners:
         }]
         opener_data = [d for d in data if not d.get("invalid_cmdline")]
 
-        mock_read_text.return_value = "".join(
+        drbd_debug_fs.write_openers("res-test", 0, "".join(
             f"{d['process_name']} {d['pid']} {d['open_duration']}\n"
             if not d.get("invalid_cmdline")
             else d["invalid_cmdline"]
             for d in data
-        )
+        ))
 
         cmdline_mapping = {d["pid"]: d["cmdline"] for d in opener_data}
-        mock_get_cmdline.side_effect = lambda pid: cmdline_mapping.get(pid, [])
+        mock_get_process_cmdline.side_effect = lambda pid: cmdline_mapping.get(pid, [])
 
         openers = Drbd.get_local_openers("res-test", 0)
 
@@ -227,23 +236,18 @@ class TestGetDrbdLocalOpeners:
         ""
     ])
     def test_invalid_opener_line_is_ignored(
-        self, mock_read_text: MagicMock, caplog: pytest.LogCaptureFixture, line: str
+        self, drbd_debug_fs: DrbdDebugFs, caplog: pytest.LogCaptureFixture, line: str
     ) -> None:
-        mock_read_text.return_value = f"{line}\n"
+        drbd_debug_fs.write_openers("res-test", 0, f"{line}\n")
 
         with caplog.at_level(log.WARNING):
             assert Drbd.get_local_openers("res-test", 0) == []
         assert f"Unable to parse DRBD opener line of volume `res-test/0` with: `{line}`." in caplog.text
 
-    def test_file_not_found(
-        self, mock_read_text: MagicMock, caplog: pytest.LogCaptureFixture
-    ) -> None:
-        openers_path = _DRBD_DEBUG_RESOURCES_PATH / "res-test" / "volumes" / "0" / "openers"
-        mock_read_text.side_effect = FileNotFoundError(
-            2,
-            "No such file or directory",
-            str(openers_path)
-        )
+    @pytest.mark.usefixtures("drbd_debug_fs")
+    def test_file_not_found(self, caplog: pytest.LogCaptureFixture) -> None:
+        openers_path = _get_drbd_debug_resource_openers_path("res-test", 0)
+
         with caplog.at_level(log.INFO):
             assert Drbd.get_local_openers("res-test", 0) == []
         assert (
@@ -253,7 +257,6 @@ class TestGetDrbdLocalOpeners:
 
 # ------------------------------------------------------------------------------
 
-@patch("xcp_storage.backends.drbd.run_command")
 class TestDemoteDrbd:
     def test_success(self, mock_run_command: MagicMock) -> None:
         mock_run_command.return_value = ("", "", 0)
@@ -289,8 +292,7 @@ class TestDemoteDrbd:
 
 # Resource names and volume numbers can come from an RPC call or external stack: types are not checked at runtime.
 # So we test different situations.
-@patch.object(Path, "read_text")
-@patch("xcp_storage.backends.drbd.run_command")
+@pytest.mark.usefixtures("drbd_debug_fs")
 class TestInvalidDrbdArguments:
     INVALID_RESOURCE_NAMES: Final = (
         "", ".", "..", "../x", "x/../y", "a/b", "/abs", "a b", "a\n", "a\x00b", "\u00e9", "-x", "--param", ".ext"
@@ -307,7 +309,6 @@ class TestInvalidDrbdArguments:
     def test_invalid_resource_name(
         self,
         mock_run_command: MagicMock,
-        mock_read_text: MagicMock,
         resource_name: Any, # noqa: ANN401
         message: str
     ) -> None:
@@ -322,7 +323,6 @@ class TestInvalidDrbdArguments:
                 call()
 
         mock_run_command.assert_not_called()
-        mock_read_text.assert_not_called()
 
     @pytest.mark.parametrize("volume_number, message", [
         *((number, "Invalid DRBD volume number") for number in INVALID_VOLUME_NUMBERS),
@@ -331,7 +331,6 @@ class TestInvalidDrbdArguments:
     def test_invalid_volume_number(
         self,
         mock_run_command: MagicMock,
-        mock_read_text: MagicMock,
         volume_number: Any, # noqa: ANN401
         message: str
     ) -> None:
@@ -343,4 +342,3 @@ class TestInvalidDrbdArguments:
                 call()
 
         mock_run_command.assert_not_called()
-        mock_read_text.assert_not_called()
