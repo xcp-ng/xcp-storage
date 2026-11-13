@@ -15,7 +15,7 @@
 import pytest
 
 from tests.backends.linstor import LinstorServiceSpec, LinstorServiceTests
-from xcp_storage.backends.linstor.satellite import _SERVICE_LINSTOR_SATELLITE, LinstorSatellite
+from xcp_storage.backends.linstor.satellite import LINSTOR_SATELLITE_SERVICE, LinstorSatellite
 
 from xcp_storage.typing import Final
 
@@ -23,7 +23,7 @@ from xcp_storage.typing import Final
 
 LINSTOR_SATELLITE_SERVICE_SPEC: Final = LinstorServiceSpec(
     LinstorSatellite,
-    _SERVICE_LINSTOR_SATELLITE,
+    LINSTOR_SATELLITE_SERVICE,
     ("enable_and_start", "disable_and_stop")
 )
 

@@ -26,6 +26,8 @@ from xcp_storage.typing import Final, List, Optional, Tuple
 
 # ==============================================================================
 
+LINSTOR_CONTROLLER_SERVICE: Final = "linstor-controller"
+
 LINSTOR_CONTROLLER_PORT_PLAIN: Final = 3370
 LINSTOR_CONTROLLER_PORT_SSL: Final = 3371
 
@@ -35,8 +37,6 @@ LINSTOR_URI_PREFIX: Final = "linstor://"
 # ------------------------------------------------------------------------------
 
 _EXEC_PATH_SS: Final = get_exec_path("/usr/sbin/ss", {"debian": "/usr/bin/ss"})
-
-_SERVICE_LINSTOR_CONTROLLER: Final = "linstor-controller"
 
 # ------------------------------------------------------------------------------
 
@@ -100,16 +100,16 @@ class LinstorController:
 
     @staticmethod
     def is_running() -> bool:
-        return is_service_active(_SERVICE_LINSTOR_CONTROLLER)
+        return is_service_active(LINSTOR_CONTROLLER_SERVICE)
 
     @staticmethod
     def start() -> None:
-        start_service(_SERVICE_LINSTOR_CONTROLLER)
+        start_service(LINSTOR_CONTROLLER_SERVICE)
 
     @staticmethod
     def stop() -> None:
-        stop_service(_SERVICE_LINSTOR_CONTROLLER)
+        stop_service(LINSTOR_CONTROLLER_SERVICE)
 
     @staticmethod
     def restart() -> None:
-        restart_service(_SERVICE_LINSTOR_CONTROLLER)
+        restart_service(LINSTOR_CONTROLLER_SERVICE)
