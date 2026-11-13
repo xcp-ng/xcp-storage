@@ -54,8 +54,16 @@ class ProcessTimeoutError(ProcessError):
 
 # ------------------------------------------------------------------------------
 
+def _get_process_path(pid: int) -> Path:
+    return PROC_DIR_PATH / str(pid)
+
 def _get_process_cmdline_path(pid: int) -> Path:
-    return PROC_DIR_PATH / str(pid) / "cmdline"
+    return _get_process_path(pid) / "cmdline"
+
+# ------------------------------------------------------------------------------
+
+def is_process_running(pid: int) -> bool:
+    return _get_process_path(pid).exists()
 
 def get_process_cmdline(pid: int) -> List[str]:
     path = _get_process_cmdline_path(pid)

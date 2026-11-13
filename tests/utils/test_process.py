@@ -12,6 +12,8 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+import os
+
 import pytest
 
 from tests.utils.exception import raises_exactly
@@ -21,12 +23,29 @@ from xcp_storage.utils.process import (
     _get_process_cmdline_path,
     CommandTimeoutError,
     get_process_cmdline,
+    is_process_running,
     run_command,
 )
 
 from xcp_storage.typing import Final
 
 # ==============================================================================
+
+class TestIsProcessRunning:
+    PID: Final = 67
+
+    def test_running(self, proc_fs: ProcFs) -> None:
+        proc_fs.write_cmdline(self.PID, b"tapdisk\x00")
+        assert is_process_running(self.PID)
+
+    @pytest.mark.usefixtures("proc_fs")
+    def test_not_running(self) -> None:
+        assert not is_process_running(self.PID)
+
+    def test_current_process(self) -> None:
+        assert is_process_running(os.getpid())
+
+# ------------------------------------------------------------------------------
 
 class TestGetProcessCmdline:
     PID: Final = 67
