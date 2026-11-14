@@ -18,7 +18,9 @@ from pathlib import Path, PurePath
 import shutil
 import tempfile
 
-from xcp_storage.typing import Final, IO, Iterator, List, Optional
+from xcp_storage.utils.contextlib import scoped_factory
+
+from xcp_storage.typing import Final, IO, Iterator, List, Optional, Sequence, StrPath, Tuple
 
 # ==============================================================================
 
@@ -86,6 +88,19 @@ def remove_file(path: PurePath, *, missing_ok: bool = False) -> None:
     except FileNotFoundError:
         if not missing_ok:
             raise
+
+@contextlib.contextmanager
+def keep_files_open(paths: Sequence[Tuple[StrPath, bool]]) -> Iterator[None]:
+    """
+    Open each path of `paths`, for writing if its flag is set, and keep them open until the exit.
+    This helper fails with the `OSError` of the first path that cannot be opened,
+    the others already open being closed.
+    """
+
+    with scoped_factory(os.open, close_fd) as open_file:
+        for path, write in paths:
+            open_file(path, (os.O_RDWR if write else os.O_RDONLY) | os.O_CLOEXEC)
+        yield
 
 # ------------------------------------------------------------------------------
 
