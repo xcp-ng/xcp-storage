@@ -21,11 +21,13 @@ from unittest.mock import patch
 
 import pytest
 
+from tests.utils.fd import assert_no_fd_leak, count_open_fds
 from xcp_storage.utils.file import (
     close_fd,
     create_hard_link,
     create_temporary_directory,
     create_temporary_file,
+    keep_files_open,
     list_temporary_paths,
     remove_file,
     write_file_atomically,
@@ -155,6 +157,36 @@ class TestRemoveFile:
         with pytest.raises(IsADirectoryError):
             remove_file(tmp_path, missing_ok=missing_ok)
         assert tmp_path.is_dir()
+
+# ------------------------------------------------------------------------------
+
+class TestKeepFilesOpen:
+    def test_keep_open(self, tmp_path: Path) -> None:
+        read_path = tmp_path / "read"
+        write_path = tmp_path / "write"
+
+        read_path.write_text("data")
+        write_path.write_text("data")
+
+        with keep_files_open([(read_path, False), (write_path, True)]):
+            assert (count_open_fds(read_path), count_open_fds(write_path)) == (1, 1)
+        assert (count_open_fds(read_path), count_open_fds(write_path)) == (0, 0)
+
+    def test_write_mode(self, tmp_path: Path) -> None:
+        # A directory opens for reading only.
+        with keep_files_open([(tmp_path, False)]):
+            assert count_open_fds(tmp_path) == 1
+
+        with assert_no_fd_leak(), pytest.raises(IsADirectoryError), keep_files_open([(tmp_path, True)]):
+            pass
+
+    def test_failure_closes_open_files(self, file_path: Path, tmp_path: Path) -> None:
+        open_path = tmp_path / "open"
+        open_path.write_text("data")
+
+        with assert_no_fd_leak(), pytest.raises(FileNotFoundError), \
+                keep_files_open([(open_path, False), (file_path, False)]):
+            pass
 
 # ------------------------------------------------------------------------------
 
