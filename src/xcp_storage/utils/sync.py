@@ -18,6 +18,7 @@ from xcp_storage.utils.time import Clock, Timer
 
 from xcp_storage.typing import (
     Callable,
+    Optional,
     Tuple,
     TypeVar,
 )
@@ -26,15 +27,19 @@ T = TypeVar("T")
 
 # ==============================================================================
 
-def wait_for_condition(function: Callable[[], T], timeout: float, interval: float) -> T:
-    if timeout <= 0:
+def wait_for_condition(function: Callable[[], T], timeout: Optional[float], interval: float) -> T:
+    # `timeout`: `None` to wait without limit, `0` or less to call `function` once.
+    if timeout is not None and timeout <= 0:
         return function()
 
-    timer = Timer(timeout)
+    timer = Timer(timeout) if timeout is not None else None
     while True:
         result = function()
         if result:
             return result
+        if timer is None:
+            time.sleep(interval)
+            continue
         remaining_time = timer.remaining_time
         if remaining_time <= 0:
             return result

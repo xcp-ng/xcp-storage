@@ -42,6 +42,18 @@ class TestWaitForCondition:
         mock_function.assert_called_once()
         mock_sleep.assert_not_called()
 
+    def test_unlimited_timeout(self, simulated_time: SimulatedTime, mock_sleep: MagicMock) -> None:
+        def condition() -> bool:
+            # Each call lasts one hour: far beyond any timeout of the project.
+            simulated_time.advance(3600.0)
+            return mock_function.call_count == 5
+
+        mock_function = Mock(side_effect=condition)
+        assert wait_for_condition(mock_function, timeout=None, interval=10.0)
+        assert mock_function.call_count == 5
+        assert mock_sleep.call_count == 4
+        mock_sleep.assert_called_with(10.0)
+
     def test_negative_timeout(self, mock_sleep: MagicMock) -> None:
         mock_function = Mock(return_value=False)
         assert not wait_for_condition(mock_function, timeout=-1.0, interval=1.0)
