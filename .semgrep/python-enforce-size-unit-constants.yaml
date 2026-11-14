@@ -2,7 +2,7 @@ rules:
   - id: python-enforce-size-unit-constants
     languages: [python]
     severity: WARNING
-    message: "Sizes must use `KIB`, `MIB`, `GIB` or `TIB` of `xcp_storage.utils.size`, not `1024` or its powers."
+    message: "Sizes must use `KIB`, `MIB`, `GIB` or `TIB` of `xcp_storage.utils.math`, not `1024` or its powers."
     # Report the literal only, not the units themselves (`MIB: Final = KIB * KIB` with `KIB: Final = 1024`).
     options:
       constant_propagation: false

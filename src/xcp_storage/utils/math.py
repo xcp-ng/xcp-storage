@@ -12,6 +12,8 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+from xcp_storage.utils.check import check_non_negative_int
+
 from xcp_storage.typing import Final
 
 # ==============================================================================
@@ -21,3 +23,18 @@ KIB: Final = 1024
 MIB: Final = KIB * KIB
 GIB: Final = MIB * KIB
 TIB: Final = GIB * KIB
+
+# ------------------------------------------------------------------------------
+
+def round_up(value: int, multiple: int) -> int:
+    """
+    Return `value` rounded up to a multiple of `multiple` (e.g. a size to its alignment).
+    Raise `ValueError` if `value` is negative or `multiple` is not positive.
+    """
+
+    check_non_negative_int(value, "value")
+    check_non_negative_int(multiple, "multiple")
+    if multiple == 0:
+        raise ValueError("Multiple must be greater than 0.")
+
+    return -(-value // multiple) * multiple
