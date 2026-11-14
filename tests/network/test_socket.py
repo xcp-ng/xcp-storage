@@ -41,6 +41,7 @@ from xcp_storage.network.socket import (
     get_socket_family_str,
     get_socket_port,
     Socket,
+    socket_close,
     socket_receive,
     socket_send,
     socket_wait_readable,
@@ -374,7 +375,7 @@ class TestSocketInvalidArguments:
     """
 
     INVALID_TIMEOUTS: Final = (float("nan"), 1e30)
-    INVALID_PORTS: Final = (-1, 65536, 1 << 40)
+    INVALID_PORTS: Final = (-1, 65536, 1 << 42)
 
     @pytest.fixture
     def created_socks(self) -> Iterator[List[socket.socket]]:
@@ -683,6 +684,32 @@ class TestSocketWaitReadable:
         first, second = create_socket_pair()
         with first, second, pytest.raises(SocketError, match="Unable to wait for data: invalid argument."):
             socket_wait_readable(first, timeout=1e30)
+
+# ------------------------------------------------------------------------------
+
+class TestSocketClose:
+    def test_close(self, socket_pair: SocketPair) -> None:
+        first, second = socket_pair
+        socket_close(first)
+        assert first.fileno() == -1
+        # The peer sees the end of the connection.
+        assert second.recv(1) == b""
+
+    def test_shutdown_before_close(self, mock_sock: MagicMock) -> None:
+        socket_close(mock_sock)
+        assert mock_sock.mock_calls == [call.shutdown(socket.SHUT_RDWR), call.close()]
+
+    def test_errors_are_ignored(self, mock_sock: MagicMock) -> None:
+        mock_sock.shutdown.side_effect = OSError(errno.ENOTCONN, "Transport endpoint is not connected.")
+        mock_sock.close.side_effect = OSError(errno.EBADF, "Bad file descriptor.")
+        socket_close(mock_sock)
+        mock_sock.close.assert_called_once_with()
+
+    def test_already_closed(self) -> None:
+        with socket.socket() as sock:
+            sock.close()
+            socket_close(sock)
+            assert sock.fileno() == -1
 
 # ------------------------------------------------------------------------------
 

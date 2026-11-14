@@ -27,9 +27,9 @@ from xcp_storage.typing import (
     Callable,
     List,
     Literal,
+    NamedTuple,
     Optional,
     overload,
-    Tuple,
     Union,
 )
 
@@ -54,8 +54,16 @@ class ProcessTimeoutError(ProcessError):
 
 # ------------------------------------------------------------------------------
 
+def _get_process_path(pid: int) -> Path:
+    return PROC_DIR_PATH / str(pid)
+
 def _get_process_cmdline_path(pid: int) -> Path:
-    return PROC_DIR_PATH / str(pid) / "cmdline"
+    return _get_process_path(pid) / "cmdline"
+
+# ------------------------------------------------------------------------------
+
+def is_process_running(pid: int) -> bool:
+    return _get_process_path(pid).exists()
 
 def get_process_cmdline(pid: int) -> List[str]:
     path = _get_process_cmdline_path(pid)
@@ -112,12 +120,28 @@ class CommandError(Exception):
         self.cmd = cmd
         self.reason = reason
 
+class CommandTimeoutError(CommandError):
+    """
+    A command did not complete in time.
+    """
+
 def default_ret_code_callback(_stdout: str, _stderr: str, ret_code: int) -> int:
     return ret_code
 
 # ------------------------------------------------------------------------------
 
-CommandResultType = Union[str, Tuple[str, str, int]]
+class CommandResult(NamedTuple):
+    """
+    Result of `run_command(..., simple=False)`. The defaults describe a command that succeeded without output.
+    """
+
+    stdout: str = ""
+    stderr: str = ""
+    # Exit code of the command.
+    ret_code: int = 0
+
+# Result of `run_command`: its stdout, or a `CommandResult` with `simple=False`.
+RunCommandResult = Union[str, CommandResult]
 
 # ------------------------------------------------------------------------------
 
@@ -142,7 +166,7 @@ def run_internal_command(
     ret_code_callback: Callable[[str, str, int], int] = default_ret_code_callback,
     quiet: bool = False,
     timeout: Optional[float] = None
-) -> Tuple[str, str, int]:
+) -> CommandResult:
     ...
 
 @overload
@@ -154,7 +178,7 @@ def run_internal_command(
     ret_code_callback: Callable[[str, str, int], int] = default_ret_code_callback,
     quiet: bool = False,
     timeout: Optional[float] = None
-) -> CommandResultType:
+) -> RunCommandResult:
     ...
 
 def run_internal_command(
@@ -165,7 +189,7 @@ def run_internal_command(
     ret_code_callback: Callable[[str, str, int], int] = default_ret_code_callback,
     quiet: bool = False,
     timeout: Optional[float] = None
-) -> CommandResultType:
+) -> RunCommandResult:
     try:
         # TODO(XCPNG-3032): Remove noqa warn and use `capture_output` after we discontinue support for Python 3.6.
         result = subprocess.run( # noqa: UP022
@@ -176,6 +200,8 @@ def run_internal_command(
             encoding="utf-8",
             timeout=timeout
         )
+    except subprocess.TimeoutExpired as e:
+        raise CommandTimeoutError(None, str(args), reason=f"Command did not end within {timeout} second(s).") from e
     except Exception as e:
         raise CommandError(None, str(args), reason=f"Failed to run command: `{e}`.") from e
 
@@ -193,7 +219,7 @@ def run_internal_command(
 
     if simple:
         return stdout
-    return stdout, stderr, ret_code
+    return CommandResult(stdout, stderr, ret_code)
 
 # ------------------------------------------------------------------------------
 
@@ -218,7 +244,7 @@ def run_command(
     ret_code_callback: Callable[[str, str, int], int] = default_ret_code_callback,
     quiet: bool = False,
     timeout: Optional[float] = None
-) -> Tuple[str, str, int]:
+) -> CommandResult:
     ...
 
 def run_command(
@@ -229,7 +255,7 @@ def run_command(
     ret_code_callback: Callable[[str, str, int], int] = default_ret_code_callback,
     quiet: bool = False,
     timeout: Optional[float] = None
-) -> CommandResultType:
+) -> RunCommandResult:
     logger.info("Running command `%s`.", " ".join(args))
     return run_internal_command(
         args,

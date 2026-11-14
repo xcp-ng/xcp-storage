@@ -1,4 +1,8 @@
+from contextlib import ExitStack
 from pathlib import Path, PurePath
+
+import xcp_storage.utils.file
+from xcp_storage.utils.file import create_temporary_directory, create_temporary_file
 
 # ------------------------------------------------------------------------------
 # Assigned a path object: `x = Path(...)`, `x = Path(...) / "y"`.
@@ -19,6 +23,42 @@ class Holder:
     def __init__(self) -> None:
         # ruleid: python-enforce-path-variable-suffix
         self.runtime = Path("/run") / "x"
+
+# ------------------------------------------------------------------------------
+# Assigned a path by an XCP helper: `with create_temporary_directory(...) as x`.
+# ------------------------------------------------------------------------------
+
+def use_temporary_directory(stack: ExitStack) -> None:
+    # ruleid: python-enforce-path-variable-suffix
+    with create_temporary_directory(Path("/var/lib/backup")) as backup:
+        pass
+    # ruleid: python-enforce-path-variable-suffix
+    with xcp_storage.utils.file.create_temporary_directory() as backup2:
+        pass
+    # ruleid: python-enforce-path-variable-suffix
+    with open("a") as file, create_temporary_directory() as backup3:
+        pass
+    # ruleid: python-enforce-path-variable-suffix
+    backup4 = stack.enter_context(create_temporary_directory())
+    # ruleid: python-enforce-path-variable-suffix
+    annotated_backup: Final = stack.enter_context(create_temporary_directory())
+    # ok: python-enforce-path-variable-suffix
+    with create_temporary_directory(Path("/var/lib/backup")) as tmp_backup_path:
+        pass
+    # ok: python-enforce-path-variable-suffix
+    tmp_dir_path = stack.enter_context(create_temporary_directory())
+    # ok: python-enforce-path-variable-suffix
+    with create_temporary_file(Path("/var/lib/backup")) as tmp_file:
+        pass
+    # ok: python-enforce-path-variable-suffix
+    backup_context = create_temporary_directory()
+
+class TemporaryHolder:
+    def __init__(self, stack: ExitStack) -> None:
+        # ruleid: python-enforce-path-variable-suffix
+        self.backup = stack.enter_context(create_temporary_directory())
+        # ok: python-enforce-path-variable-suffix
+        self.backup_path = stack.enter_context(create_temporary_directory())
 
 # ------------------------------------------------------------------------------
 # Derived from a path variable: `x = base_path / "y"`.

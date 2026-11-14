@@ -18,8 +18,9 @@ import typing
 from typing import *  # noqa: F403
 
 # TODO(XCPNG-3032): Remove hack for python 3.11.
-# Before Python 3.7, `NoReturn` is missing from `typing.__all__`: the global import does not export it.
-from typing import NoReturn  # noqa: F401
+# Missing from `typing.__all__`, so not exported by the global import: `NoReturn` and `Pattern` before Python 3.7, `IO`
+# before Python 3.9.
+from typing import IO, NoReturn, Pattern  # noqa: F401
 
 # ==============================================================================
 

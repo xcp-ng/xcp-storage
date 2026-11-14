@@ -17,12 +17,12 @@ from functools import lru_cache
 import os
 from pathlib import Path, PurePath
 import re
-import tempfile
 from unittest.mock import patch
 
 import pytest
 
 from xcp_storage.config.platform import RUNTIME_DIR_PATH
+from xcp_storage.utils.file import create_temporary_directory, remove_file
 from xcp_storage.utils.process import CommandError, run_command
 from xcp_storage.utils.service import _EXEC_PATH_SYSTEMCTL, reload_service_conf
 
@@ -140,8 +140,8 @@ class ServiceManager(NamedTuple):
         with contextlib.ExitStack() as stack:
             if not is_unit_template or self._can_link_template():
                 # `link` makes the unit known to the manager without copying it in a specific config directory.
-                tmp_dir_path = stack.enter_context(tempfile.TemporaryDirectory())
-                unit_copy_path = Path(tmp_dir_path) / unit_name
+                tmp_dir_path = stack.enter_context(create_temporary_directory())
+                unit_copy_path = tmp_dir_path / unit_name
                 unit_copy_path.write_text(unit_content)
                 self._link_runtime_unit(unit_copy_path)
                 stack.callback(self._unlink_runtime_unit, unit_name)
@@ -156,7 +156,7 @@ class ServiceManager(NamedTuple):
                 self._reload_units()
 
                 stack.callback(self._reload_units)
-                stack.callback(runtime_unit_path.unlink)
+                stack.callback(remove_file, runtime_unit_path)
 
             if not is_unit_template:
                 stack.callback(self._run_systemctl_command, ["stop", unit_name])
@@ -192,8 +192,8 @@ class ServiceManager(NamedTuple):
 
         probe_unit_name = "xcp-storage-link-probe@.service"
 
-        with tempfile.TemporaryDirectory() as tmp_dir_path:
-            probe_unit_path = Path(tmp_dir_path) / probe_unit_name
+        with create_temporary_directory() as tmp_dir_path:
+            probe_unit_path = tmp_dir_path / probe_unit_name
             probe_unit_path.write_text("[Service]\nExecStart=/bin/true\n")
             try:
                 service_manager._link_runtime_unit(probe_unit_path, quiet=True)

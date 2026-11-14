@@ -21,7 +21,12 @@ from unittest.mock import (
 import pytest
 
 from tests.backends.linstor import LinstorServiceSpec, LinstorServiceTests
-from xcp_storage.backends.linstor.controller import _SERVICE_LINSTOR_CONTROLLER, LinstorController
+from tests.utils.exception import raises_exactly
+from xcp_storage.backends.linstor.controller import (
+    _SERVICE_LINSTOR_CONTROLLER,
+    LINSTOR_URI_PREFIX,
+    LinstorController,
+)
 from xcp_storage.network.socket import (
     create_tcp_client_sock,
     create_tcp_server_sock,
@@ -43,7 +48,7 @@ from xcp_storage.typing import (
 
 _LINSTOR_CONTROLLER_MODULE: Final = LinstorController.__module__
 
-_LINSTOR_CONTROLLER_SERVICE_SPEC: Final = LinstorServiceSpec(
+LINSTOR_CONTROLLER_SERVICE_SPEC: Final = LinstorServiceSpec(
     LinstorController, _SERVICE_LINSTOR_CONTROLLER, ("start", "stop", "restart")
 )
 
@@ -52,9 +57,9 @@ _LINSTOR_CONTROLLER_SERVICE_SPEC: Final = LinstorServiceSpec(
 class TestLinstorControllerService(LinstorServiceTests):
     @pytest.fixture
     def linstor_service_spec(self) -> LinstorServiceSpec:
-        return _LINSTOR_CONTROLLER_SERVICE_SPEC
+        return LINSTOR_CONTROLLER_SERVICE_SPEC
 
-    @pytest.fixture(params=_LINSTOR_CONTROLLER_SERVICE_SPEC.commands)
+    @pytest.fixture(params=LINSTOR_CONTROLLER_SERVICE_SPEC.commands)
     def command(self, request: pytest.FixtureRequest) -> str:
         return request.param
 
@@ -161,7 +166,7 @@ class TestLinstorControllerGetAddresses:
 
         with mock_listener_port(listener):
             assert LinstorController.get_addresses() == [loopback_spec.uri_client_address]
-            assert LinstorController.get_uri() == f"linstor://{loopback_spec.uri_client_address}"
+            assert LinstorController.get_uri() == LinstorController.format_uri(loopback_spec.uri_client_address)
 
 # ------------------------------------------------------------------------------
 
@@ -183,10 +188,45 @@ class TestLinstorControllerGetUri:
 
     @pytest.mark.parametrize("peer_addresses, expected_uri", [
         ((), ""),
-        ((PEER_ADDRESS,), f"linstor://{PEER_ADDRESS}"),
-        ((PEER_ADDRESS, "10.10.0.14"), f"linstor://{PEER_ADDRESS}"),
-        ((IPV6_PEER_ADDRESS,), f"linstor://{IPV6_PEER_ADDRESS}")
+        ((PEER_ADDRESS,), LinstorController.format_uri(PEER_ADDRESS)),
+        ((PEER_ADDRESS, "10.10.0.14"), LinstorController.format_uri(PEER_ADDRESS)),
+        ((IPV6_PEER_ADDRESS,), LinstorController.format_uri(IPV6_PEER_ADDRESS))
     ])
     def test_get_uri(self, mock_run_command: MagicMock, peer_addresses: Tuple[str, ...], expected_uri: str) -> None:
         mock_run_command.return_value = self.get_ss_output(*peer_addresses)
         assert LinstorController.get_uri() == expected_uri
+
+# ------------------------------------------------------------------------------
+
+class TestLinstorControllerFormatParseUri:
+    @pytest.mark.parametrize("address, port, uri", [
+        ("10.10.0.12", None, f"{LINSTOR_URI_PREFIX}10.10.0.12"),
+        ("10.10.0.12", 3370, f"{LINSTOR_URI_PREFIX}10.10.0.12:3370"),
+        ("controller.example", None, f"{LINSTOR_URI_PREFIX}controller.example"),
+        ("fe80::2", 3370, f"{LINSTOR_URI_PREFIX}[fe80::2]:3370"),
+        ("[fe80::2]", None, f"{LINSTOR_URI_PREFIX}[fe80::2]")
+    ], ids=["ipv4", "ipv4-port", "host-name", "ipv6-port", "ipv6-in-brackets"])
+    def test_format(self, address: str, port: Optional[int], uri: str) -> None:
+        assert LinstorController.format_uri(address, port) == uri
+
+    @pytest.mark.parametrize("address, port", [
+        ("10.10.0.12", None),
+        ("10.10.0.12", 3370),
+        ("controller.example", None),
+        ("fe80::2", None),
+        ("fe80::2", 3370)
+    ], ids=["ipv4", "ipv4-port", "host-name", "ipv6", "ipv6-port"])
+    def test_parse_uri(self, address: str, port: Optional[int]) -> None:
+        assert LinstorController.parse_uri(LinstorController.format_uri(address, port)) == (address, port)
+
+    @pytest.mark.parametrize("uri, message", [
+        ("http://10.10.0.12", "Not a LINSTOR URI"),
+        (LINSTOR_URI_PREFIX, "Invalid address in LINSTOR URI"),
+        (f"{LINSTOR_URI_PREFIX}[fe80::2", "Invalid address in LINSTOR URI"),
+        (f"{LINSTOR_URI_PREFIX}[fe80::2]3370", "Invalid address in LINSTOR URI"),
+        (f"{LINSTOR_URI_PREFIX}fe80::2", "Invalid port in LINSTOR URI"),
+        (f"{LINSTOR_URI_PREFIX}10.10.0.12:port", "Invalid port in LINSTOR URI")
+    ], ids=["other-scheme", "no-address", "unclosed-bracket", "no-port-separator", "ipv6-no-brackets", "invalid-port"])
+    def test_parse_invalid_uri(self, uri: str, message: str) -> None:
+        with raises_exactly(ValueError, f"{message}: `{uri}`."):
+            LinstorController.parse_uri(uri)

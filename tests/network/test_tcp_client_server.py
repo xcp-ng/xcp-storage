@@ -22,7 +22,7 @@ from unittest.mock import patch
 
 import pytest
 
-from tests.network import find_free_tcp_port
+from tests.network import find_free_tcp_port, run_threaded_server
 from tests.network.tls import over_plain_and_tls, TlsContexts
 from tests.utils.thread import create_thread_group
 from xcp_storage.network.socket import (
@@ -39,6 +39,7 @@ from xcp_storage.utils.time import Clock
 from xcp_storage.typing import (
     Callable,
     cast,
+    ContextManager,
     Final,
     Iterator,
     Optional,
@@ -63,15 +64,13 @@ TLS_SHUTDOWN_TIMEOUT: Final = 0.2
 
 # ------------------------------------------------------------------------------
 
-@contextlib.contextmanager
-def run_threaded_server(tcp_server: TcpServer) -> Iterator[TcpServer]:
-    with create_thread_group(join_timeout=SERVER_THREAD_SHUTDOWN_TIMEOUT) as thread_group:
-        thread_group.start(tcp_server.run)
-        try:
-            assert tcp_server.wait_for_startup(timeout=SERVER_STARTUP_TIMEOUT), "Server not started."
-            yield tcp_server
-        finally:
-            tcp_server.stop(timeout=SERVER_SHUTDOWN_TIMEOUT)
+def run_threaded_tcp_server(tcp_server: TcpServer) -> ContextManager[TcpServer]:
+    return run_threaded_server(
+        tcp_server,
+        startup_timeout=SERVER_STARTUP_TIMEOUT,
+        shutdown_timeout=SERVER_SHUTDOWN_TIMEOUT,
+        thread_shutdown_timeout=SERVER_THREAD_SHUTDOWN_TIMEOUT
+    )
 
 @pytest.fixture
 def tcp_server(
@@ -80,7 +79,7 @@ def tcp_server(
 ) -> Iterator[TcpServer]:
     server_class = request.param
     server = server_class("127.0.0.1", 0, ssl_context=ssl_contexts.server if ssl_contexts else None)
-    with run_threaded_server(server) as threaded_server:
+    with run_threaded_tcp_server(server) as threaded_server:
         yield threaded_server
 
 TcpClientFactory = Callable[[], TcpClient]
@@ -291,7 +290,7 @@ class TestTcpClient:
 
         def run() -> None:
             time.sleep(0.5)
-            with run_threaded_server(tcp_server):
+            with run_threaded_tcp_server(tcp_server):
                 time.sleep(3.0)
 
         with create_thread_group(join_timeout=SERVER_THREAD_SHUTDOWN_TIMEOUT) as thread_group:
@@ -335,18 +334,18 @@ class TestTcpServer:
         tcp_port = find_free_tcp_port()
         tcp_server = EchoServer("127.0.0.1", tcp_port)
         assert tcp_server.port == tcp_port
-        with run_threaded_server(tcp_server):
+        with run_threaded_tcp_server(tcp_server):
             assert tcp_server.port == tcp_port
 
     def test_run_twice(self) -> None:
-        with run_threaded_server(EchoServer("127.0.0.1", 0)) as threaded_server, \
+        with run_threaded_tcp_server(EchoServer("127.0.0.1", 0)) as threaded_server, \
             pytest.raises(TcpServerError, match="Server is already running."):
                 threaded_server.run()
 
     def test_stop_just_after_startup(self) -> None:
         # Ensure we don't have a regression/race condition somewhere.
         for _ in range(100):
-            with run_threaded_server(EchoServer("127.0.0.1", 0)):
+            with run_threaded_tcp_server(EchoServer("127.0.0.1", 0)):
                 pass
 
     def test_startup_on_used_port(self) -> None:
@@ -364,14 +363,14 @@ class TestTcpServer:
 
     def test_wait_for_startup_after_stop(self) -> None:
         tcp_server = EchoServer("127.0.0.1", 0)
-        with run_threaded_server(tcp_server):
+        with run_threaded_tcp_server(tcp_server):
             assert tcp_server.wait_for_startup(timeout=SERVER_STARTUP_TIMEOUT)
 
         # The startup of the previous execution must not be reported once the server is stopped:
         # a restart would otherwise be seen as already started.
         assert not tcp_server.wait_for_startup(timeout=0.1)
 
-        with run_threaded_server(tcp_server):
+        with run_threaded_tcp_server(tcp_server):
             assert tcp_server.wait_for_startup(timeout=SERVER_STARTUP_TIMEOUT)
 
 # ------------------------------------------------------------------------------
