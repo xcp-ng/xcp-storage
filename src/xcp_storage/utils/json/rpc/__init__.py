@@ -508,6 +508,10 @@ class JsonRpcDispatcher:
 
         try:
             result = target(*args, **kwargs)
+        except JsonRpcResponseError as e:
+            # Raised by the method itself (e.g. an error of the application, with its own `data`): sent as is.
+            # So, keep it!
+            return JsonRpcCallResult(error=e)
         except Exception as e:
             data: JsonDict = {"message": stringify_exception(e)}
 
