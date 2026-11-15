@@ -1,7 +1,7 @@
 from pathlib import Path
 
 # ------------------------------------------------------------------------------
-# Plain string: `"/proc/..."`, `Path("/run")`.
+# Plain string: `"/proc/..."`, `Path("/run")`, `Path("/etc/...")`.
 # ------------------------------------------------------------------------------
 
 # ruleid: python-enforce-system-dir-path-constants
@@ -16,10 +16,20 @@ OTHER_PROC_PATH: Final = Path("/proc")
 run_dir_path = Path("/run")
 # ruleid: python-enforce-system-dir-path-constants
 self_path = Path("/proc") / "self"
+# ruleid: python-enforce-system-dir-path-constants
+config_path = Path("/etc/xcp-storage/rpc.conf")
+# ruleid: python-enforce-system-dir-path-constants
+OTHER_CONFIG_DIR_PATH: Final = Path("/etc")
 # ok: python-enforce-system-dir-path-constants
 cmdline_path = PROC_DIR_PATH / str(pid) / "cmdline"
 # ok: python-enforce-system-dir-path-constants
 socket_path = RUNTIME_DIR_PATH / "lock.sock"
+# ok: python-enforce-system-dir-path-constants
+config_path = XCP_STORAGE_CONFIG_DIR_PATH / "rpc.conf"
+# ok: python-enforce-system-dir-path-constants
+etcd_path = Path("/etcd/data")
+# ok: python-enforce-system-dir-path-constants
+local_config_path = Path("/usr/local/etc/xcp-storage")
 # ok: python-enforce-system-dir-path-constants
 other_path = Path("/procedure/x")
 # ok: python-enforce-system-dir-path-constants
@@ -53,10 +63,14 @@ raw_path = rf"/proc/{pid}/cmdline"
 upper_path = F"/run/{name}"
 # ruleid: python-enforce-system-dir-path-constants
 raw_upper_path = FR"/run/{name}"
+# ruleid: python-enforce-system-dir-path-constants
+drop_in_path = f"/etc/systemd/system/{name}.service.d"
 # ok: python-enforce-system-dir-path-constants
 message = f"See {PROC_DIR_PATH}/self"
 # ok: python-enforce-system-dir-path-constants
 other_path = f"/runtime/{name}"
+# ok: python-enforce-system-dir-path-constants
+etcd_path = f"/etcd/{name}"
 # ok: python-enforce-system-dir-path-constants
 other_path = f"{base}/proc/{pid}"
 # ok: python-enforce-system-dir-path-constants
@@ -82,6 +96,8 @@ exists(MULTIPATH_FLAG)
 # The definitions themselves.
 # ------------------------------------------------------------------------------
 
+# ok: python-enforce-system-dir-path-constants
+CONFIG_DIR_PATH: Final = Path("/etc")
 # ok: python-enforce-system-dir-path-constants
 PROC_DIR_PATH: Final = Path("/proc")
 # ok: python-enforce-system-dir-path-constants
