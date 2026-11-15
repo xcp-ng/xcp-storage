@@ -73,7 +73,7 @@ class FifoLockDaemon:
 
     def __init__(self, exec_path: Path, socket_path: Path) -> None:
         self.socket_path = socket_path
-        self._process = subprocess.Popen([str(exec_path), str(socket_path)])
+        self._process = subprocess.Popen([exec_path, socket_path])
         self._killed = False
 
     def wait_for_startup(self) -> None:

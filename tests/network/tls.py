@@ -74,9 +74,9 @@ def tls_contexts(tmp_path: Path) -> TlsContexts:
     ))
 
     server_context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
-    server_context.load_cert_chain(str(cert_path), str(key_path))
+    server_context.load_cert_chain(cert_path, key_path)
     client_context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
-    client_context.load_verify_locations(str(cert_path))
+    client_context.load_verify_locations(cert_path)
     return TlsContexts(server_context, client_context)
 
 @pytest.fixture
