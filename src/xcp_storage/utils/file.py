@@ -37,6 +37,18 @@ def _get_temporary_file_prefix(path: PurePath) -> str:
 
 # ------------------------------------------------------------------------------
 
+def get_file_size(path: PurePath) -> int:
+    """
+    Return the size in bytes of the file or block device at `path` (as a reminder:
+    a block device has no size in its `stat`).
+    """
+
+    fd = os.open(path, os.O_RDONLY | os.O_CLOEXEC)
+    try:
+        return os.lseek(fd, 0, os.SEEK_END)
+    finally:
+        close_fd(fd)
+
 def close_fd(fd: int) -> None:
     """
     Close a file descriptor, ignoring the errors.

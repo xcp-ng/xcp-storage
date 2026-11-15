@@ -27,11 +27,13 @@ from xcp_storage.utils.file import (
     create_hard_link,
     create_temporary_directory,
     create_temporary_file,
+    get_file_size,
     keep_files_open,
     list_temporary_paths,
     remove_file,
     write_file_atomically,
 )
+from xcp_storage.utils.math import MIB
 
 # ==============================================================================
 
@@ -157,6 +159,19 @@ class TestRemoveFile:
         with pytest.raises(IsADirectoryError):
             remove_file(tmp_path, missing_ok=missing_ok)
         assert tmp_path.is_dir()
+
+# ------------------------------------------------------------------------------
+
+class TestGetFileSize:
+    @pytest.mark.parametrize("size", [0, 1000, 4 * MIB])
+    def test_size(self, file_path: Path, size: int) -> None:
+        with file_path.open("wb") as file:
+            file.truncate(size)
+        assert get_file_size(file_path) == size
+
+    def test_missing_file(self, file_path: Path) -> None:
+        with assert_no_fd_leak(), pytest.raises(FileNotFoundError):
+            get_file_size(file_path)
 
 # ------------------------------------------------------------------------------
 
