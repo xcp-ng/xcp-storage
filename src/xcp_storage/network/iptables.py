@@ -12,13 +12,19 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+import ipaddress
+import re
+
 from xcp_storage.config.platform import DEFAULT_FIREWALL_INPUT_CHAIN
+from xcp_storage.utils.check import check_ipv4_address, check_regex_match
+from xcp_storage.utils.file import create_temporary_directory
 from xcp_storage.utils.process import CommandError, CommandResult, run_command
 
 from xcp_storage.typing import (
     Final,
     List,
     Optional,
+    Sequence,
     Tuple,
 )
 
@@ -27,9 +33,16 @@ from xcp_storage.typing import (
 _MAIN_FIREWALL_INPUT_CHAIN: Final = "INPUT"
 
 _EXEC_PATH_IPTABLES: Final = "/usr/sbin/iptables"
+_EXEC_PATH_IPTABLES_RESTORE: Final = "/usr/sbin/iptables-restore"
 _EXEC_PATH_SERVICE: Final = "/usr/sbin/service"
 
 _PROTOCOL_TCP: Final = "tcp"
+
+# Table of the chains of this module, the default one of `iptables`.
+_IPTABLES_FILTER_TABLE: Final = "filter"
+
+# Name of a chain given to `iptables`.
+_CHAIN_NAME_REGEX: Final = re.compile(r"[A-Za-z0-9_.][A-Za-z0-9_.-]{0,27}")
 
 # ------------------------------------------------------------------------------
 
@@ -65,21 +78,25 @@ def _is_fatal_iptables_code(code: int) -> bool:
     # 1 for other errors.
     return code not in (0, 1)
 
+def _check_iptables_chain_name(chain: str) -> None:
+    check_regex_match(chain, _CHAIN_NAME_REGEX, "iptables chain name")
+
 # ------------------------------------------------------------------------------
 
-def has_iptables_rule(rule: List[str]) -> bool:
+def _get_iptables_chain_rules(chain: str) -> Optional[List[str]]:
+    # Rules of the chain `chain` as printed by `iptables -S` (`-A <chain> ...`), `None` if it does not exist.
     code: Optional[int]
     try:
-        _stdout, reason, code = _try_iptables_command("-C", rule)
+        stdout, reason, code = _try_iptables_command("-S", [chain])
         if not _is_fatal_iptables_code(code):
-            return not code
+            return None if code else [line for line in stdout.splitlines() if line.startswith("-A ")]
     except CommandError as e:
         reason, code = e.reason, e.code
-    raise IptablesError(f"Failed to test existence of iptables rule `{rule}`: `{reason}`.", code)
+    raise IptablesError(f"Failed to read iptables chain `{chain}`: `{reason}`.", code)
 
 # ------------------------------------------------------------------------------
 
-def _ensure_iptables_chain_exists(chain: str) -> bool:
+def _ensure_iptables_input_chain_exists(chain: str) -> bool:
     try:
         _stdout, stderr, ret_code = _try_iptables_command("-N", [chain])
         if _is_fatal_iptables_code(ret_code):
@@ -101,19 +118,47 @@ def _ensure_iptables_chain_exists(chain: str) -> bool:
 
 # ------------------------------------------------------------------------------
 
-def _update_iptables_ports(protocol: str, str_ports: str, *, open_ports: bool, stateful: bool, chain: str) -> None:
+def has_iptables_rule(rule: List[str]) -> bool:
+    code: Optional[int]
+    try:
+        _stdout, reason, code = _try_iptables_command("-C", rule)
+        if not _is_fatal_iptables_code(code):
+            return not code
+    except CommandError as e:
+        reason, code = e.reason, e.code
+    raise IptablesError(f"Failed to test existence of iptables rule `{rule}`: `{reason}`.", code)
+
+# ------------------------------------------------------------------------------
+
+def _update_iptables_ports(
+    protocol: str,
+    str_ports: str,
+    *,
+    open_ports: bool,
+    stateful: bool,
+    chain: str,
+    target_chain: Optional[str]
+) -> None:
+    # `target_chain`: the rule of the port jumps to this chain instead of
+    # accepting the packets, e.g. a chain accepting some addresses only
+    # (`update_iptables_allowlist_chain`, set up before opening the port).
+
+    _check_iptables_chain_name(chain)
+    if target_chain is not None:
+        _check_iptables_chain_name(target_chain)
+
     # 1. Check if the rule is present.
     rule = [chain, "-p", protocol]
     if stateful:
         rule += ["-m", "conntrack", "--ctstate", "NEW", "-m", protocol]
-    rule += ["--dport", str_ports, "-j", "ACCEPT"]
+    rule += ["--dport", str_ports, "-j", target_chain or "ACCEPT"]
 
     if open_ports == has_iptables_rule(rule):
         return
 
     # 2. Open or close.
     if open_ports:
-        _ensure_iptables_chain_exists(chain)
+        _ensure_iptables_input_chain_exists(chain)
         try:
             _run_iptables_command("-I", rule)
         except CommandError as e:
@@ -156,14 +201,16 @@ def update_iptables_tcp_port(
     *,
     open_port: bool,
     stateful: bool = True,
-    chain: str = DEFAULT_FIREWALL_INPUT_CHAIN
+    chain: str = DEFAULT_FIREWALL_INPUT_CHAIN,
+    target_chain: Optional[str] = None
 ) -> None:
     _update_iptables_ports(
         _PROTOCOL_TCP,
         str(port),
         open_ports=open_port,
         stateful=stateful,
-        chain=chain
+        chain=chain,
+        target_chain=target_chain
     )
 
 def update_iptables_tcp_port_range(
@@ -171,12 +218,80 @@ def update_iptables_tcp_port_range(
     *,
     open_ports: bool,
     stateful: bool = True,
-    chain: str = DEFAULT_FIREWALL_INPUT_CHAIN
+    chain: str = DEFAULT_FIREWALL_INPUT_CHAIN,
+    target_chain: Optional[str] = None
 ) -> None:
     _update_iptables_ports(
         _PROTOCOL_TCP,
         f"{ports[0]}:{ports[1]}",
         open_ports=open_ports,
         stateful=stateful,
-        chain=chain
+        chain=chain,
+        target_chain=target_chain
     )
+
+# ------------------------------------------------------------------------------
+
+def _check_allowlist_chain_name(chain: str) -> None:
+    _check_iptables_chain_name(chain)
+    if chain in (_MAIN_FIREWALL_INPUT_CHAIN, DEFAULT_FIREWALL_INPUT_CHAIN):
+        raise ValueError(f"Invalid iptables chain name: `{chain}`.")
+
+def _build_allowlist_chain_rule(chain: str, source: str) -> str:
+    # Rule of a chain of `update_iptables_allowlist_chain` accepting the address `source` (canonical form), as printed
+    # by `iptables -S`: with the prefix length.
+    return f"-A {chain} -s {source}/32 -j ACCEPT"
+
+# ------------------------------------------------------------------------------
+
+def create_iptables_allowlist_chain(chain: str) -> None:
+    """
+    Create the chain `chain` (see `update_iptables_allowlist_chain`) if missing, accepting no address: rules can jump to
+    it before it is filled. An existing chain is kept as it is.
+    """
+
+    _check_allowlist_chain_name(chain)
+    if _get_iptables_chain_rules(chain) is not None:
+        return
+
+    try:
+        _run_iptables_command("-N", [chain])
+    except CommandError as e:
+        raise IptablesError(f"Failed to create iptables allowlist chain `{chain}`: `{e.reason}`.", e.code) from None
+
+    _save_iptables_changes()
+
+def update_iptables_allowlist_chain(chain: str, addresses: Sequence[str]) -> None:
+    """
+    Set the chain `chain` (created if missing) to accept the packets of the
+    IPv4 addresses `addresses` only.
+
+    Implementation: a rule of a port jumping to it (`target_chain` of `update_iptables_tcp_port`) opens
+    the port to them, the other packets going on after the rule. Nothing done if it already holds exactly
+    these addresses.
+    """
+
+    _check_allowlist_chain_name(chain)
+    for address in addresses:
+        check_ipv4_address(address, "IPv4 address")
+
+    sources = [str(ipaddress.IPv4Address(address)) for address in addresses]
+
+    expected_rules = {_build_allowlist_chain_rule(chain, source) for source in sources}
+    current_rules = _get_iptables_chain_rules(chain)
+    if current_rules is not None and set(current_rules) == expected_rules:
+        return
+
+    rules = [f"*{_IPTABLES_FILTER_TABLE}", f":{chain} - [0:0]"]
+    rules += [f"-A {chain} -s {source} -j ACCEPT" for source in sources]
+    rules.append("COMMIT")
+
+    with create_temporary_directory() as tmp_dir_path:
+        rules_path = tmp_dir_path / "rules"
+        rules_path.write_text("\n".join(rules) + "\n")
+        try:
+            run_command([_EXEC_PATH_IPTABLES_RESTORE, "--noflush", str(rules_path)], expected_ret_code=0)
+        except CommandError as e:
+            raise IptablesError(f"Failed to update iptables allowlist chain `{chain}`: `{e.reason}`.", e.code) from None
+
+    _save_iptables_changes()
