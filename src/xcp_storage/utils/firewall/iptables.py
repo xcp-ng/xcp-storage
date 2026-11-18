@@ -18,12 +18,14 @@ import re
 from xcp_storage.config.platform import DEFAULT_FIREWALL_INPUT_CHAIN
 from xcp_storage.utils.check import check_ipv4_address, check_regex_match
 from xcp_storage.utils.file import create_temporary_directory
+from xcp_storage.utils.firewall.interface import FirewallBackend, FirewallError
 from xcp_storage.utils.process import CommandError, CommandResult, run_command
 
 from xcp_storage.typing import (
     Final,
     List,
     Optional,
+    override,
     Sequence,
     Tuple,
 )
@@ -46,10 +48,8 @@ _CHAIN_NAME_REGEX: Final = re.compile(r"[A-Za-z0-9_.][A-Za-z0-9_.-]{0,27}")
 
 # ------------------------------------------------------------------------------
 
-class IptablesError(Exception):
-    def __init__(self, message: str, code: Optional[int] = None) -> None:
-        super().__init__(message)
-        self.code = code
+class IptablesError(FirewallError):
+    pass
 
 # ------------------------------------------------------------------------------
 
@@ -104,12 +104,12 @@ def _ensure_iptables_input_chain_exists(chain: str) -> bool:
         updated = not ret_code
 
         return_rule = [chain, "-j", "RETURN"]
-        if not has_iptables_rule(return_rule):
+        if not _has_iptables_rule(return_rule):
             _run_iptables_command("-A", return_rule)
             updated = True
 
         jump_rule = [_MAIN_FIREWALL_INPUT_CHAIN, "-j", chain]
-        if not has_iptables_rule(jump_rule):
+        if not _has_iptables_rule(jump_rule):
             _run_iptables_command("-I", jump_rule)
             updated = True
     except CommandError as e:
@@ -118,7 +118,7 @@ def _ensure_iptables_input_chain_exists(chain: str) -> bool:
 
 # ------------------------------------------------------------------------------
 
-def has_iptables_rule(rule: List[str]) -> bool:
+def _has_iptables_rule(rule: List[str]) -> bool:
     code: Optional[int]
     try:
         _stdout, reason, code = _try_iptables_command("-C", rule)
@@ -130,30 +130,46 @@ def has_iptables_rule(rule: List[str]) -> bool:
 
 # ------------------------------------------------------------------------------
 
+# Open/close TCP port using stateless or stateful rule.
+#
+# /!\ When opening or closing TCP ports using stateful rules, be aware of the Linux `conntrack` mechanism:
+# it maintains a state database of all network connections (TCP, UDP, ...) passing through a machine.
+# This is important for packet filtering, but there is a limitation:
+# The kernel sets a maximum limit `nf_conntrack_max` based on available RAM.
+# If this limit is reached, the system will log:
+# `nf_conntrack: table full, dropping packets`
+# and and start rejecting incoming/outgoing traffic...
+#
+# Even after a connection is closed, the kernel retains the entry in the table for a long period,
+# 120 seconds for TCP.
+#
+# So it's important to avoid `conntrack` for specific case like DRBD protocol.
+# For it, that's important to allow packets to pass even when the connection tracking table
+# ran full temporarily because short-lived connections are the primary cause of table exhaustion
+# AND because we can have this scenario with DRBD.
+
 def _update_iptables_ports(
     protocol: str,
     str_ports: str,
     *,
     open_ports: bool,
     stateful: bool,
-    chain: str,
     target_chain: Optional[str]
 ) -> None:
     # `target_chain`: the rule of the port jumps to this chain instead of
-    # accepting the packets, e.g. a chain accepting some addresses only
-    # (`update_iptables_allowlist_chain`, set up before opening the port).
+    # accepting the packets.
 
-    _check_iptables_chain_name(chain)
     if target_chain is not None:
         _check_iptables_chain_name(target_chain)
 
     # 1. Check if the rule is present.
+    chain = DEFAULT_FIREWALL_INPUT_CHAIN
     rule = [chain, "-p", protocol]
     if stateful:
         rule += ["-m", "conntrack", "--ctstate", "NEW", "-m", protocol]
     rule += ["--dport", str_ports, "-j", target_chain or "ACCEPT"]
 
-    if open_ports == has_iptables_rule(rule):
+    if open_ports == _has_iptables_rule(rule):
         return
 
     # 2. Open or close.
@@ -178,120 +194,89 @@ def _update_iptables_ports(
 
 # ------------------------------------------------------------------------------
 
-# Open/close TCP port using stateless or stateful rule.
-#
-# /!\ When opening or closing TCP ports using stateful rules, be aware of the Linux `conntrack` mechanism:
-# it maintains a state database of all network connections (TCP, UDP, ...) passing through a machine.
-# This is important for packet filtering, but there is a limitation:
-# The kernel sets a maximum limit `nf_conntrack_max` based on available RAM.
-# If this limit is reached, the system will log:
-# `nf_conntrack: table full, dropping packets`
-# and and start rejecting incoming/outgoing traffic...
-#
-# Even after a connection is closed, the kernel retains the entry in the table for a long period,
-# 120 seconds for TCP.
-#
-# So it's important to avoid `conntrack` for specific case like DRBD protocol.
-# For it, that's important to allow packets to pass even when the connection tracking table
-# ran full temporarily because short-lived connections are the primary cause of table exhaustion
-# AND because we can have this scenario with DRBD.
-
-def update_iptables_tcp_port(
-    port: int,
-    *,
-    open_port: bool,
-    stateful: bool = True,
-    chain: str = DEFAULT_FIREWALL_INPUT_CHAIN,
-    target_chain: Optional[str] = None
-) -> None:
-    _update_iptables_ports(
-        _PROTOCOL_TCP,
-        str(port),
-        open_ports=open_port,
-        stateful=stateful,
-        chain=chain,
-        target_chain=target_chain
-    )
-
-def update_iptables_tcp_port_range(
-    ports: Tuple[int, int],
-    *,
-    open_ports: bool,
-    stateful: bool = True,
-    chain: str = DEFAULT_FIREWALL_INPUT_CHAIN,
-    target_chain: Optional[str] = None
-) -> None:
-    _update_iptables_ports(
-        _PROTOCOL_TCP,
-        f"{ports[0]}:{ports[1]}",
-        open_ports=open_ports,
-        stateful=stateful,
-        chain=chain,
-        target_chain=target_chain
-    )
-
-# ------------------------------------------------------------------------------
-
 def _check_allowlist_chain_name(chain: str) -> None:
     _check_iptables_chain_name(chain)
     if chain in (_MAIN_FIREWALL_INPUT_CHAIN, DEFAULT_FIREWALL_INPUT_CHAIN):
         raise ValueError(f"Invalid iptables chain name: `{chain}`.")
 
 def _build_allowlist_chain_rule(chain: str, source: str) -> str:
-    # Rule of a chain of `update_iptables_allowlist_chain` accepting the address `source` (canonical form), as printed
+    # Rule of an allowlist chain (`update_allowlist`) accepting the address `source` (canonical form), as printed
     # by `iptables -S`: with the prefix length.
     return f"-A {chain} -s {source}/32 -j ACCEPT"
 
 # ------------------------------------------------------------------------------
 
-def create_iptables_allowlist_chain(chain: str) -> None:
+class IptablesFirewallBackend(FirewallBackend):
     """
-    Create the chain `chain` (see `update_iptables_allowlist_chain`) if missing, accepting no address: rules can jump to
-    it before it is filled. An existing chain is kept as it is.
-    """
-
-    _check_allowlist_chain_name(chain)
-    if _get_iptables_chain_rules(chain) is not None:
-        return
-
-    try:
-        _run_iptables_command("-N", [chain])
-    except CommandError as e:
-        raise IptablesError(f"Failed to create iptables allowlist chain `{chain}`: `{e.reason}`.", e.code) from None
-
-    _save_iptables_changes()
-
-def update_iptables_allowlist_chain(chain: str, addresses: Sequence[str]) -> None:
-    """
-    Set the chain `chain` (created if missing) to accept the packets of the
-    IPv4 addresses `addresses` only.
-
-    Implementation: a rule of a port jumping to it (`target_chain` of `update_iptables_tcp_port`) opens
-    the port to them, the other packets going on after the rule. Nothing done if it already holds exactly
-    these addresses.
+    Firewall managed by `iptables`: the rules of the ports are in the chain `DEFAULT_FIREWALL_INPUT_CHAIN`.
+    An allowlist is a chain of rules accepting one address each, jumped to by the rules of the ports open to it.
     """
 
-    _check_allowlist_chain_name(chain)
-    for address in addresses:
-        check_ipv4_address(address, "IPv4 address")
+    @override
+    def update_tcp_port(self, port: int, *, open_port: bool, stateful: bool, allowlist: Optional[str]) -> None:
+        _update_iptables_ports(
+            _PROTOCOL_TCP,
+            str(port),
+            open_ports=open_port,
+            stateful=stateful,
+            target_chain=allowlist
+        )
 
-    sources = [str(ipaddress.IPv4Address(address)) for address in addresses]
+    @override
+    def update_tcp_port_range(
+        self, ports: Tuple[int, int], *, open_ports: bool, stateful: bool, allowlist: Optional[str]
+    ) -> None:
+        _update_iptables_ports(
+            _PROTOCOL_TCP,
+            f"{ports[0]}:{ports[1]}",
+            open_ports=open_ports,
+            stateful=stateful,
+            target_chain=allowlist
+        )
 
-    expected_rules = {_build_allowlist_chain_rule(chain, source) for source in sources}
-    current_rules = _get_iptables_chain_rules(chain)
-    if current_rules is not None and set(current_rules) == expected_rules:
-        return
+    @override
+    def create_allowlist(self, name: str) -> None:
+        _check_allowlist_chain_name(name)
+        if _get_iptables_chain_rules(name) is not None:
+            return
 
-    rules = [f"*{_IPTABLES_FILTER_TABLE}", f":{chain} - [0:0]"]
-    rules += [f"-A {chain} -s {source} -j ACCEPT" for source in sources]
-    rules.append("COMMIT")
-
-    with create_temporary_directory() as tmp_dir_path:
-        rules_path = tmp_dir_path / "rules"
-        rules_path.write_text("\n".join(rules) + "\n")
         try:
-            run_command([_EXEC_PATH_IPTABLES_RESTORE, "--noflush", str(rules_path)], expected_ret_code=0)
+            _run_iptables_command("-N", [name])
         except CommandError as e:
-            raise IptablesError(f"Failed to update iptables allowlist chain `{chain}`: `{e.reason}`.", e.code) from None
+            raise IptablesError(f"Failed to create iptables allowlist chain `{name}`: `{e.reason}`.", e.code) from None
 
-    _save_iptables_changes()
+        _save_iptables_changes()
+
+    @override
+    def update_allowlist(self, name: str, addresses: Sequence[str]) -> None:
+        """
+        Implementation: the rules of the chain `name` are replaced at once (`iptables-restore --noflush`: all or
+        nothing, the other chains untouched), then saved with the others.
+        """
+
+        _check_allowlist_chain_name(name)
+        for address in addresses:
+            check_ipv4_address(address, "IPv4 address")
+
+        sources = [str(ipaddress.IPv4Address(address)) for address in addresses]
+
+        expected_rules = {_build_allowlist_chain_rule(name, source) for source in sources}
+        current_rules = _get_iptables_chain_rules(name)
+        if current_rules is not None and set(current_rules) == expected_rules:
+            return
+
+        rules = [f"*{_IPTABLES_FILTER_TABLE}", f":{name} - [0:0]"]
+        rules += [f"-A {name} -s {source} -j ACCEPT" for source in sources]
+        rules.append("COMMIT")
+
+        with create_temporary_directory() as tmp_dir_path:
+            rules_path = tmp_dir_path / "rules"
+            rules_path.write_text("\n".join(rules) + "\n")
+            try:
+                run_command([_EXEC_PATH_IPTABLES_RESTORE, "--noflush", str(rules_path)], expected_ret_code=0)
+            except CommandError as e:
+                raise IptablesError(
+                    f"Failed to update iptables allowlist chain `{name}`: `{e.reason}`.", e.code
+                ) from None
+
+        _save_iptables_changes()
