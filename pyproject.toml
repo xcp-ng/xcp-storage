@@ -92,16 +92,21 @@ disallow_untyped_defs = false
 # cd _build/default/ocaml/xapi-storage/python/
 # make
 #
-# # Clean env.
-# opam clean
-# rm -rf /root/.opam
-#
 # # Copy python dir in your dev env and then:
 # stubgen --include-private python/ -o <XCP_STORAGE_PATH>/stubs/
 # # Replace invalid return types caused by "raise Unimplemented" calls.
 # find <XCP_STORAGE_PATH>/stubs/xapi/ -name "*.pyi" -exec sed -i 's/ -> None:/:/g' {} +
+#
+# cd -
+#
+# # Copy `python3/stubs/XenAPI.pyi` python file in your dev env in <XCP_STORAGE_PATH>/stubs/.
+#
+# # Clean env.
+# opam clean
+# rm -rf /root/.opam
+
 [[tool.mypy.overrides]]
-module = "xapi.*"
+module = ["xapi.*", "XenAPI"]
 disable_error_code = [
     "explicit-override",
     "no-untyped-def"
