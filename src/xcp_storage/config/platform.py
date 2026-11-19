@@ -32,16 +32,22 @@ DEFAULT_FIREWALL_INPUT_CHAIN: Final = "xapi-INPUT"
 CONFIG_DIR_PATH: Final = Path("/etc")
 PROC_DIR_PATH: Final = Path("/proc")
 RUNTIME_DIR_PATH: Final = Path("/run")
+STATE_DIR_PATH: Final = Path("/var/lib")
 
 # ------------------------------------------------------------------------------
 # XCP paths.
 # ------------------------------------------------------------------------------
 
+_XCP_STORAGE_DIR_NAME: Final = "xcp-storage"
+
 # Configuration files of xcp-storage.
-XCP_STORAGE_CONFIG_DIR_PATH: Final = CONFIG_DIR_PATH / "xcp-storage"
+XCP_STORAGE_CONFIG_DIR_PATH: Final = CONFIG_DIR_PATH / _XCP_STORAGE_DIR_NAME
 
 # Runtime files of xcp-storage (locks, sockets, datapath states...).
-XCP_STORAGE_RUNTIME_DIR_PATH: Final = RUNTIME_DIR_PATH / "xcp-storage"
+XCP_STORAGE_RUNTIME_DIR_PATH: Final = RUNTIME_DIR_PATH / _XCP_STORAGE_DIR_NAME
+
+# Persistent files of xcp-storage local to the host (host list, backups...).
+XCP_STORAGE_STATE_DIR_PATH: Final = STATE_DIR_PATH / _XCP_STORAGE_DIR_NAME
 
 # ------------------------------------------------------------------------------
 

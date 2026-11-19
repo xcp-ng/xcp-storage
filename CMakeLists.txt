@@ -100,6 +100,7 @@ endif()
 
 set(DAEMON_LIST
     "xcp-storage-fifo-lock"
+    "xcp-storage-pool-hosts"
     "xcp-storage-rpc"
 )
 

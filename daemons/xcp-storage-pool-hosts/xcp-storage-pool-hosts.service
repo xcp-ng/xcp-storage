@@ -1,0 +1,13 @@
+[Unit]
+Description=XCP-ng Storage Pool Hosts
+Wants=xapi-init-complete.target
+After=xapi-init-complete.target iptables.service
+
+[Service]
+Type=simple
+ExecStart=/usr/libexec/xcp-storage/xcp-storage-pool-hosts
+Restart=on-failure
+RestartSec=5s
+
+[Install]
+WantedBy=multi-user.target
