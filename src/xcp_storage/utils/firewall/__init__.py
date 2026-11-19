@@ -14,27 +14,40 @@
 
 import contextlib
 
-from xcp_storage.config.platform import XCP_STORAGE_RUNTIME_DIR_PATH
+from xcp_storage.config.platform import (
+    FIREWALL_BACKEND_TYPE,
+    FirewallBackendType,
+    XCP_STORAGE_RUNTIME_DIR_PATH,
+)
 from xcp_storage.utils.firewall.interface import FirewallBackend
 from xcp_storage.utils.firewall.iptables import IptablesFirewallBackend
 from xcp_storage.utils.lock.file import FileLock
 
 from xcp_storage.typing import (
+    Dict,
     Final,
     Iterator,
     Optional,
     Sequence,
     Tuple,
+    Type,
 )
 
 # ==============================================================================
 
 _LOCK_PATH: Final = XCP_STORAGE_RUNTIME_DIR_PATH / "firewall.lock"
 
+_FIREWALL_BACKEND_TYPE_TO_BACKEND: Final[Dict[FirewallBackendType, Type[FirewallBackend]]] = {
+    FirewallBackendType.IPTABLES: IptablesFirewallBackend,
+}
+
 # ------------------------------------------------------------------------------
 
+def _create_firewall_backend(backend_type: FirewallBackendType) -> FirewallBackend:
+    return _FIREWALL_BACKEND_TYPE_TO_BACKEND[backend_type]()
+
 def _get_firewall_backend() -> FirewallBackend:
-    return IptablesFirewallBackend()
+    return _create_firewall_backend(FIREWALL_BACKEND_TYPE)
 
 @contextlib.contextmanager
 def _locked_firewall_backend() -> Iterator[FirewallBackend]:

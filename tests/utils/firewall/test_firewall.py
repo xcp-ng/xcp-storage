@@ -18,7 +18,9 @@ from unittest.mock import create_autospec, MagicMock, patch
 import pytest
 
 from tests.utils.exception import raises_exactly
+from xcp_storage.config.platform import FIREWALL_BACKEND_TYPE, FirewallBackendType
 from xcp_storage.utils.firewall import (
+    _create_firewall_backend,
     _get_firewall_backend,
     create_firewall_allowlist,
     update_firewall_allowlist,
@@ -29,7 +31,7 @@ from xcp_storage.utils.firewall.interface import FirewallBackend, FirewallError
 from xcp_storage.utils.firewall.iptables import IptablesFirewallBackend
 from xcp_storage.utils.lock.file import FileLock
 
-from xcp_storage.typing import Final, Iterator
+from xcp_storage.typing import Final, Iterator, Type
 
 # ==============================================================================
 
@@ -68,8 +70,15 @@ class TestFirewall:
     ALLOWLIST: Final = "test-hosts"
     ADDRESSES: Final = ("10.30.43.1", "10.30.43.2")
 
-    def test_backend(self) -> None:
-        assert isinstance(_get_firewall_backend(), IptablesFirewallBackend)
+    @pytest.mark.parametrize(("backend_type", "backend_class"), [
+        (FirewallBackendType.IPTABLES, IptablesFirewallBackend),
+    ])
+    def test_create_backend(self, backend_type: FirewallBackendType, backend_class: Type[FirewallBackend]) -> None:
+        assert type(_create_firewall_backend(backend_type)) is backend_class
+
+    def test_build_backend(self) -> None:
+        # Backend of the build configuration.
+        assert type(_get_firewall_backend()) is type(_create_firewall_backend(FIREWALL_BACKEND_TYPE))
 
     def test_update_tcp_port(self, mock_firewall_backend: MagicMock) -> None:
         update_firewall_tcp_port(80, open_port=True, allowlist=self.ALLOWLIST)

@@ -17,7 +17,10 @@ import shutil
 
 import pytest
 
-from tests import PROJECT_PATH
+from tests import (
+    get_build_config_cmake_variables,
+    PROJECT_PATH,
+)
 from xcp_storage.utils.process import CommandError, run_internal_command
 
 from xcp_storage.typing import Final, List
@@ -66,7 +69,9 @@ def project_build_path() -> Path:
         "-S", str(PROJECT_PATH),
         "-B", str(_PROJECT_BUILD_PATH),
         f"-DCMAKE_INSTALL_PREFIX:PATH={_PROJECT_INSTALL_PATH}",
-        f"-DSYSTEMD_SYSTEM_UNIT_DIR:PATH={_PROJECT_SYSTEMD_UNIT_PATH}"
+        f"-DSYSTEMD_SYSTEM_UNIT_DIR:PATH={_PROJECT_SYSTEMD_UNIT_PATH}",
+        # Same target platform as the code under test: the configuration rewrites `build_config.py`.
+        *(f"-D{name}:STRING={value}" for name, value in get_build_config_cmake_variables().items())
     ])
     _run_build_command(["cmake", "--build", str(_PROJECT_BUILD_PATH)])
 

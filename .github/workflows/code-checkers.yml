@@ -27,6 +27,9 @@ jobs:
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
+      # `xcp_storage/config/build_config.py` is imported by the code.
+      - uses: ./.github/actions/configure-project
+
       - name: Mypy check
         run: uv run mypy
 

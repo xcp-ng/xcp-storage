@@ -6,4 +6,5 @@ __pycache__
 *.pyc
 build
 src/xcp_storage/build_info.py
+src/xcp_storage/config/build_config.py
 .coverage

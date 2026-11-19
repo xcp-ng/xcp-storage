@@ -39,6 +39,49 @@ if (NOT DEFINED SYSTEMD_SYSTEM_UNIT_DIR)
 endif()
 
 # ------------------------------------------------------------------------------
+# Platform settings: required, given by a preset of `CMakePresets.json`
+# (e.g. `cmake --preset xcp-ng-8.3 -B build`). They are written in
+# `xcp_storage/config/build_config.py`, generated in the source tree.
+# ------------------------------------------------------------------------------
+
+function(xcp_storage_platform_setting NAME DESCRIPTION)
+    set(${NAME} "" CACHE STRING "${DESCRIPTION}")
+    if ("${${NAME}}" STREQUAL "")
+        message(FATAL_ERROR
+            "`${NAME}` is not set: configure with a preset (`cmake --list-presets`), "
+            "e.g. `cmake --preset xcp-ng-8.3 -B build`."
+        )
+    endif()
+endfunction()
+
+# ------------------------------------------------------------------------------
+
+set(XCP_STORAGE_FIREWALL_BACKEND_LIST
+    "iptables"
+)
+
+# ------------------------------------------------------------------------------
+
+xcp_storage_platform_setting(XCP_STORAGE_FIREWALL_BACKEND "Firewall backend.")
+set_property(CACHE XCP_STORAGE_FIREWALL_BACKEND PROPERTY STRINGS ${XCP_STORAGE_FIREWALL_BACKEND_LIST})
+if (NOT XCP_STORAGE_FIREWALL_BACKEND IN_LIST XCP_STORAGE_FIREWALL_BACKEND_LIST)
+    message(FATAL_ERROR
+        "Invalid `XCP_STORAGE_FIREWALL_BACKEND`: `${XCP_STORAGE_FIREWALL_BACKEND}`, "
+        "expected one of: ${XCP_STORAGE_FIREWALL_BACKEND_LIST}."
+    )
+endif()
+
+xcp_storage_platform_setting(XCP_STORAGE_FIREWALL_INPUT_CHAIN "Firewall chain of the input rules.")
+
+# ------------------------------------------------------------------------------
+
+configure_file(
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/xcp_storage/config/build_config.py.in
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/xcp_storage/config/build_config.py
+    @ONLY
+)
+
+# ------------------------------------------------------------------------------
 # Build info: generate `xcp_storage/build_info.py` in the source tree, so that
 # it is part of the Python package.
 # ------------------------------------------------------------------------------

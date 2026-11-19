@@ -12,8 +12,14 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+from enum import Enum
 from functools import lru_cache
 from pathlib import Path
+
+from xcp_storage.config.build_config import (
+    FIREWALL_BACKEND,
+    FIREWALL_INPUT_CHAIN,
+)
 
 from xcp_storage.typing import Final, Mapping, Tuple
 
@@ -23,7 +29,18 @@ from xcp_storage.typing import Final, Mapping, Tuple
 # host's specificities (OS, firewall rules, ...).
 # ==============================================================================
 
-DEFAULT_FIREWALL_INPUT_CHAIN: Final = "xapi-INPUT"
+class FirewallBackendType(Enum):
+    """
+    Backend managing the firewall of a host.
+    """
+
+    IPTABLES = "iptables"
+
+# ------------------------------------------------------------------------------
+
+FIREWALL_BACKEND_TYPE: Final = FirewallBackendType(FIREWALL_BACKEND)
+
+DEFAULT_FIREWALL_INPUT_CHAIN: Final = FIREWALL_INPUT_CHAIN
 
 # ------------------------------------------------------------------------------
 # Default system paths.
