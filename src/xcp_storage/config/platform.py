@@ -19,6 +19,7 @@ from pathlib import Path
 from xcp_storage.config.build_config import (
     FIREWALL_BACKEND,
     FIREWALL_INPUT_CHAIN,
+    POOL_BACKEND,
 )
 
 from xcp_storage.typing import Final, Mapping, Tuple
@@ -36,11 +37,20 @@ class FirewallBackendType(Enum):
 
     IPTABLES = "iptables"
 
+class PoolBackendType(Enum):
+    """
+    Backend managing the hosts of the pool.
+    """
+
+    XAPI = "xapi"
+
 # ------------------------------------------------------------------------------
 
 FIREWALL_BACKEND_TYPE: Final = FirewallBackendType(FIREWALL_BACKEND)
 
 DEFAULT_FIREWALL_INPUT_CHAIN: Final = FIREWALL_INPUT_CHAIN
+
+POOL_BACKEND_TYPE: Final = PoolBackendType(POOL_BACKEND)
 
 # ------------------------------------------------------------------------------
 # Default system paths.

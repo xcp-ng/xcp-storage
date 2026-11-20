@@ -19,9 +19,8 @@ import sys
 import threading
 from types import FrameType
 
-from xcp_storage.connectors.xapi.pool import watch_pool_host_addresses
 import xcp_storage.log as log
-from xcp_storage.pool.hosts import update_pool_host_addresses
+from xcp_storage.pool import update_pool_host_addresses, watch_pool_host_addresses
 from xcp_storage.version import XcpStorageVersion
 
 from xcp_storage.typing import Dict, Optional

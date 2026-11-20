@@ -19,3 +19,4 @@ from xcp_storage.typing import Final
 # The constant `X` must come from the CMake variable `XCP_STORAGE_X`.
 FIREWALL_BACKEND: Final = "@XCP_STORAGE_FIREWALL_BACKEND@"
 FIREWALL_INPUT_CHAIN: Final = "@XCP_STORAGE_FIREWALL_INPUT_CHAIN@"
+POOL_BACKEND: Final = "@XCP_STORAGE_POOL_BACKEND@"

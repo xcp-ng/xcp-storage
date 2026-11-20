@@ -44,6 +44,7 @@ endif()
 # `xcp_storage/config/build_config.py`, generated in the source tree.
 # ------------------------------------------------------------------------------
 
+# The values given after `DESCRIPTION`, if any, are the only ones accepted.
 function(xcp_storage_platform_setting NAME DESCRIPTION)
     set(${NAME} "" CACHE STRING "${DESCRIPTION}")
     if ("${${NAME}}" STREQUAL "")
@@ -52,26 +53,24 @@ function(xcp_storage_platform_setting NAME DESCRIPTION)
             "e.g. `cmake --preset xcp-ng-8.3 -B build`."
         )
     endif()
+
+    if (ARGN)
+        set_property(CACHE ${NAME} PROPERTY STRINGS ${ARGN})
+        if (NOT "${${NAME}}" IN_LIST ARGN)
+            message(FATAL_ERROR "Invalid `${NAME}`: `${${NAME}}`, expected one of: ${ARGN}.")
+        endif()
+    endif()
 endfunction()
 
 # ------------------------------------------------------------------------------
 
-set(XCP_STORAGE_FIREWALL_BACKEND_LIST
+xcp_storage_platform_setting(XCP_STORAGE_FIREWALL_BACKEND "Firewall backend."
     "iptables"
 )
-
-# ------------------------------------------------------------------------------
-
-xcp_storage_platform_setting(XCP_STORAGE_FIREWALL_BACKEND "Firewall backend.")
-set_property(CACHE XCP_STORAGE_FIREWALL_BACKEND PROPERTY STRINGS ${XCP_STORAGE_FIREWALL_BACKEND_LIST})
-if (NOT XCP_STORAGE_FIREWALL_BACKEND IN_LIST XCP_STORAGE_FIREWALL_BACKEND_LIST)
-    message(FATAL_ERROR
-        "Invalid `XCP_STORAGE_FIREWALL_BACKEND`: `${XCP_STORAGE_FIREWALL_BACKEND}`, "
-        "expected one of: ${XCP_STORAGE_FIREWALL_BACKEND_LIST}."
-    )
-endif()
-
 xcp_storage_platform_setting(XCP_STORAGE_FIREWALL_INPUT_CHAIN "Firewall chain of the input rules.")
+xcp_storage_platform_setting(XCP_STORAGE_POOL_BACKEND "Pool manager giving the hosts of the pool."
+    "xapi"
+)
 
 # ------------------------------------------------------------------------------
 
