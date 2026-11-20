@@ -31,7 +31,7 @@ from xcp_storage.network.iptables import (
     update_iptables_tcp_port,
     update_iptables_tcp_port_range,
 )
-from xcp_storage.utils.process import CommandError, CommandResultType
+from xcp_storage.utils.process import CommandError, CommandResult, RunCommandResult
 
 from xcp_storage.typing import (
     Callable,
@@ -161,13 +161,13 @@ def run_command_side_effect_factory(
     has_jump_rule: bool = False,
     has_port_rule: bool = False,
     chain: str = DEFAULT_FIREWALL_INPUT_CHAIN
-) -> Callable[P, CommandResultType]:
+) -> Callable[P, RunCommandResult]:
     chain_rules = {
         tuple(get_return_rule(chain)): has_return_rule,
         tuple(get_jump_rule(chain)): has_jump_rule
     }
 
-    def impl(*args: P.args, **kwargs: P.kwargs) -> CommandResultType:
+    def impl(*args: P.args, **kwargs: P.kwargs) -> RunCommandResult:
         cmd_args = cast(List[str], args[0])
 
         program_name = cmd_args[0]
@@ -178,15 +178,15 @@ def run_command_side_effect_factory(
         # Has chain?
         if "-N" in cmd_args:
             assert not simple
-            return ("", "", int(has_chain))
+            return CommandResult(ret_code=int(has_chain))
 
         # Has rule?
         if "-C" in cmd_args:
             assert not simple
             rule = cmd_args[2:] # Rule is just after `-C` flag.
             if "-p" in rule:
-                return ("", "", int(not has_port_rule)) # Check for port.
-            return ("", "", int(not chain_rules.get(tuple(rule), False))) # Check for return/jump.
+                return CommandResult(ret_code=int(not has_port_rule)) # Check for port.
+            return CommandResult(ret_code=int(not chain_rules.get(tuple(rule), False))) # Check for return/jump.
 
         assert simple
         return ""
@@ -328,12 +328,12 @@ def run_fail_command_side_effect_factory(
     *,
     error: Optional[CommandError] = None,
     has_port_rule: bool = False
-) -> Callable[P, CommandResultType]:
-    default_side_effect: Callable[P, CommandResultType] = run_command_side_effect_factory(
+) -> Callable[P, RunCommandResult]:
+    default_side_effect: Callable[P, RunCommandResult] = run_command_side_effect_factory(
         has_chain=False, has_port_rule=has_port_rule
     )
 
-    def impl(*args: P.args, **kwargs: P.kwargs) -> CommandResultType:
+    def impl(*args: P.args, **kwargs: P.kwargs) -> RunCommandResult:
         cmd_args = cast(List[str], args[0])
         # Mock default side effect.
         if cmd_args != command:
@@ -342,7 +342,7 @@ def run_fail_command_side_effect_factory(
         if error is not None:
             raise error
         # Use 3 as default error, like described by iptables manual: incompatibility between kernel and user space.
-        return ("", "", cast(int, 3))
+        return CommandResult(ret_code=3)
     return impl
 
 # ------------------------------------------------------------------------------
