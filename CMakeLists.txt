@@ -73,6 +73,32 @@ xcp_storage_platform_setting(XCP_STORAGE_POOL_BACKEND "Pool manager giving the h
 )
 
 # ------------------------------------------------------------------------------
+# Systemd units of the backends, derived from the platform settings.
+# Used in the templates (`*.in`) of the units of xcp-storage.
+# ------------------------------------------------------------------------------
+
+# Set `OUTPUT` to the unit of the value of the setting `NAME`, given as
+# `<value> <unit>` pairs: every accepted value of the setting needs its pair.
+function(xcp_storage_backend_unit OUTPUT NAME)
+    set(VALUE_UNITS ${ARGN})
+    while (VALUE_UNITS)
+        list(POP_FRONT VALUE_UNITS VALUE UNIT)
+        if ("${VALUE}" STREQUAL "${${NAME}}")
+            set(${OUTPUT} "${UNIT}" PARENT_SCOPE)
+            return()
+        endif()
+    endwhile()
+    message(FATAL_ERROR "No systemd unit known for `${NAME}`: `${${NAME}}`.")
+endfunction()
+
+xcp_storage_backend_unit(XCP_STORAGE_FIREWALL_BACKEND_UNIT XCP_STORAGE_FIREWALL_BACKEND
+    "iptables" "iptables.service"
+)
+xcp_storage_backend_unit(XCP_STORAGE_POOL_BACKEND_UNIT XCP_STORAGE_POOL_BACKEND
+    "xapi" "xapi-init-complete.target"
+)
+
+# ------------------------------------------------------------------------------
 
 configure_file(
     ${CMAKE_CURRENT_SOURCE_DIR}/src/xcp_storage/config/build_config.py.in

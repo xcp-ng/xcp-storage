@@ -22,7 +22,13 @@ install(PROGRAMS ${CMAKE_CURRENT_SOURCE_DIR}/xcp-storage-pool-hosts.py
                 WORLD_READ WORLD_EXECUTE
 )
 
-install(FILES ${CMAKE_CURRENT_SOURCE_DIR}/xcp-storage-pool-hosts.service
+configure_file(
+    ${CMAKE_CURRENT_SOURCE_DIR}/xcp-storage-pool-hosts.service.in
+    ${CMAKE_CURRENT_BINARY_DIR}/xcp-storage-pool-hosts.service
+    @ONLY
+)
+
+install(FILES ${CMAKE_CURRENT_BINARY_DIR}/xcp-storage-pool-hosts.service
     DESTINATION ${SYSTEMD_SYSTEM_UNIT_DIR}
     PERMISSIONS OWNER_READ OWNER_WRITE GROUP_READ WORLD_READ
 )

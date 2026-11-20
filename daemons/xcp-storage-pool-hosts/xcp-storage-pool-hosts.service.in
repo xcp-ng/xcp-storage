@@ -1,7 +1,7 @@
 [Unit]
 Description=XCP-ng Storage Pool Hosts
-Wants=xapi-init-complete.target
-After=xapi-init-complete.target iptables.service
+Wants=@XCP_STORAGE_POOL_BACKEND_UNIT@
+After=@XCP_STORAGE_POOL_BACKEND_UNIT@ @XCP_STORAGE_FIREWALL_BACKEND_UNIT@
 
 [Service]
 Type=simple
