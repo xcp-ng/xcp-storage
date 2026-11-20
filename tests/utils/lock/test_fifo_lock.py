@@ -115,6 +115,10 @@ class TestFifoLockName:
         with raises_exactly(ValueError, LOCK_MESSAGE_INVALID_NAME.format(name=name)):
             FifoLock(name)
 
+    def test_name_not_a_string(self) -> None:
+        with raises_exactly(ValueError, "Not a lock name: `b'lock'` (type `bytes`)."):
+            FifoLock(b"lock") # type: ignore[arg-type]
+
     def test_get_service_name(self) -> None:
         assert FifoLock.get_service_name(DEFAULT_FIFO_BACKEND_LOCK_NAME) == DEFAULT_FIFO_BACKEND_SERVICE_NAME
         assert ReadWriteFifoLock.get_service_name(ON_DEMAND_LOCK_NAME) == ON_DEMAND_SERVICE_NAME

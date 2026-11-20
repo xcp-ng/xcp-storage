@@ -374,7 +374,7 @@ class TestSocketInvalidArguments:
     """
 
     INVALID_TIMEOUTS: Final = (float("nan"), 1e30)
-    INVALID_PORTS: Final = (-1, 65536, 1 << 40)
+    INVALID_PORTS: Final = (-1, 65536, 1 << 42)
 
     @pytest.fixture
     def created_socks(self) -> Iterator[List[socket.socket]]:
