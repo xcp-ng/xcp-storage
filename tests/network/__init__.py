@@ -15,17 +15,24 @@
 import contextlib
 import socket
 
+from tests.utils.thread import create_thread_group
 from xcp_storage.network.socket import (
     create_unix_client_sock,
     create_unix_server_sock,
     get_socket_port,
 )
+from xcp_storage.network.tcp_server import TcpServer
+from xcp_storage.utils.json.rpc.server import JsonRpcServer
 
 from xcp_storage.typing import (
     cast,
     Iterator,
     StrPath,
+    TypeVar,
+    Union,
 )
+
+ServerT = TypeVar("ServerT", bound=Union[TcpServer, JsonRpcServer])
 
 # ==============================================================================
 
@@ -45,3 +52,19 @@ def busy_unix_server_sock(path: StrPath) -> Iterator[socket.socket]:
         unix_server.listen(0)
         with create_unix_client_sock(path):
             yield unix_server
+
+@contextlib.contextmanager
+def run_threaded_server(
+    server: ServerT, *, startup_timeout: float, shutdown_timeout: float, thread_shutdown_timeout: float
+) -> Iterator[ServerT]:
+    """
+    Run `server` in a thread, started when the block is entered and stopped at its exit.
+    """
+
+    with create_thread_group(join_timeout=thread_shutdown_timeout) as thread_group:
+        thread_group.start(server.run)
+        try:
+            assert server.wait_for_startup(timeout=startup_timeout), "Server not started."
+            yield server
+        finally:
+            server.stop(timeout=shutdown_timeout)

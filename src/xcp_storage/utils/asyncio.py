@@ -39,8 +39,26 @@ def cancel_event_loop_tasks(event_loop: asyncio.AbstractEventLoop) -> None:
     event_loop.run_until_complete(asyncio.tasks.gather(*tasks, return_exceptions=True))
     event_loop.run_until_complete(event_loop.shutdown_asyncgens())
 
+async def abort_stream_writer(stream: asyncio.StreamWriter) -> None:
+    """
+    Abort the connection of `stream`, plain TCP or TLS, and wait until its socket is closed.
+    Unsent data is dropped and a TLS connection is cut without its shutdown.
+    """
+
+    stream.transport.abort()
+    try:
+        closing_coro = stream.wait_closed()
+    except AttributeError:
+        # TODO(XCPNG-3032): Workaround for python 3.6: `StreamWriter.wait_closed` is not available.
+        # `abort` schedules the closing of the socket in the loop: let it run.
+        await asyncio.sleep(0)
+        return
+
+    with contextlib.suppress(OSError):
+        await closing_coro
+
 async def close_stream_writer(stream: asyncio.StreamWriter) -> None:
-    with contextlib.suppress(Exception):
+    try:
         if not stream.transport.is_closing():
             stream.close()
             abort_timer = None
@@ -51,3 +69,9 @@ async def close_stream_writer(stream: asyncio.StreamWriter) -> None:
             if abort_timer:
                 # Stream closed, no reason to force close the transport.
                 abort_timer.cancel()
+    except asyncio.CancelledError:
+        # TODO(XCPNG-3032): Workaround for python < 3.8, where `CancelledError` derives from `Exception`.
+        raise
+    except Exception: # noqa: S110
+        # Best effort: the connection is gone either way.
+        pass

@@ -273,17 +273,27 @@ class TcpServer(ABC):
             logger.warning("Timeout reached for client %s: `%s`.", client, e)
         except asyncio.IncompleteReadError as e:
             logger.warning("Connection closed for client %s: `%s`.", client, e)
+        except asyncio.CancelledError:
+            # TODO(XCPNG-3032): Workaround for python < 3.8, where `CancelledError` derives from `Exception`.
+            raise
         except Exception as e:
             logger.error("Unhandled exception for client %s: `%s`.", client, e)
         finally:
+            await self._close_client(client, connected=connected)
+
+    async def _close_client(self, client: Client, *, connected: bool) -> None:
+        try:
             if connected:
                 try:
                     await self._handle_client_disconnect(client)
+                except asyncio.CancelledError:
+                    # TODO(XCPNG-3032): Workaround for python < 3.8, where `CancelledError` derives from `Exception`.
+                    raise
                 except Exception as e:
                     logger.error("Unhandled exception for client %s during disconnect: `%s`.", client, e)
-
+        finally:
             try:
-                await close_stream_writer(client_writer)
+                await close_stream_writer(client.writer)
             finally: # Deal with `CancelledError`.
                 self._clients.discard(client)
                 logger.info("Client %s disconnected.", client)

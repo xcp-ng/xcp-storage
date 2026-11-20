@@ -85,6 +85,9 @@ class _JsonRpcServerImpl(TcpServer):
         except ProtocolError as e:
             error_message = str(e)
             seq = e.seq
+        except asyncio.CancelledError:
+            # TODO(XCPNG-3032): Workaround for python < 3.8, where `CancelledError` derives from `Exception`.
+            raise
         except Exception as e:
             error_message = str(e)
 
@@ -134,6 +137,9 @@ class _JsonRpcServerImpl(TcpServer):
             error_message = str(e)
             seq = e.seq
             protocol_error = True
+        except asyncio.CancelledError:
+            # TODO(XCPNG-3032): Workaround for python < 3.8, where `CancelledError` derives from `Exception`.
+            raise
         except Exception as e:
             error_message = str(e)
 
