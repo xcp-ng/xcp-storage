@@ -21,7 +21,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from tests.conftest import PROJECT_DAEMONS_DIR_PATH, PROJECT_PATH
+from tests import PROJECT_DAEMONS_DIR_PATH, PROJECT_PATH
 from xcp_storage.utils.contextlib import scoped_factory
 from xcp_storage.utils.lock.fifo import (
     _LOCK_DAEMON_NAME,
@@ -73,7 +73,7 @@ class FifoLockDaemon:
 
     def __init__(self, exec_path: Path, socket_path: Path) -> None:
         self.socket_path = socket_path
-        self._process = subprocess.Popen([str(exec_path), str(socket_path)])
+        self._process = subprocess.Popen([exec_path, socket_path])
         self._killed = False
 
     def wait_for_startup(self) -> None:

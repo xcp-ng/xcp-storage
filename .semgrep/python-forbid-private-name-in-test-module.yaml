@@ -1,0 +1,60 @@
+rules:
+  - id: python-forbid-private-name-in-test-module
+    languages: [python]
+    severity: WARNING
+    message: >-
+      `$NAME` of a test module must not start with `_`: a test module is never imported, so its names stay public
+      (except `_<NAME>_MODULE`).
+    paths:
+      include:
+        - test_*.py
+    patterns:
+      - pattern-either:
+          # Assigned at module level: constant, type alias.
+          - patterns:
+              - pattern: "$NAME = $VALUE"
+              # Module of an object: always private (`python-enforce-module-constant-name`).
+              - pattern-not: "$NAME = $OBJECT.__module__"
+              - pattern-not-inside: |
+                  def $FUNCTION(...):
+                      ...
+              - pattern-not-inside: |
+                  class $CLASS:
+                      ...
+          # Defined function.
+          - patterns:
+              - pattern: |
+                  def $NAME(...):
+                      ...
+              # Local function or method, at any depth (`...` also matches nested blocks).
+              - pattern-not-inside: |
+                  def $FUNCTION(...):
+                      ...
+                      def $NAME(...):
+                          ...
+              - pattern-not-inside: |
+                  class $CLASS:
+                      ...
+                      def $NAME(...):
+                          ...
+          # Defined class.
+          - patterns:
+              - pattern: |
+                  class $NAME:
+                      ...
+              # Local or nested class, at any depth.
+              - pattern-not-inside: |
+                  def $FUNCTION(...):
+                      ...
+                      class $NAME:
+                          ...
+              - pattern-not-inside: |
+                  class $CLASS:
+                      ...
+                      class $NAME:
+                          ...
+      - focus-metavariable: $NAME
+      # Dunder names read by pytest (`__test__`) keep their name.
+      - metavariable-regex:
+          metavariable: $NAME
+          regex: '^_(?!_)\w+$'
