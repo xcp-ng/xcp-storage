@@ -24,7 +24,9 @@ from unittest.mock import (
 import pytest
 
 from tests.utils.exception import raises_exactly
-from xcp_storage.utils.firewall.iptables import (
+from xcp_storage.config.platform import FirewallBackendType
+from xcp_storage.utils.firewall import _create_firewall_backend
+from xcp_storage.utils.firewall.backend.iptables import (
     _EXEC_PATH_IPTABLES,
     _EXEC_PATH_IPTABLES_RESTORE,
     _EXEC_PATH_SERVICE,
@@ -598,3 +600,9 @@ class TestAllowlistChain:
             IptablesFirewallBackend().update_allowlist(ALLOWLIST_CHAIN, ALLOWLIST_ADDRESSES)
         assert exc_info.value.code == 2
         assert mock_run_command.call_count == 2
+
+# ------------------------------------------------------------------------------
+
+class TestIptablesFirewallBackend:
+    def test_create_backend(self) -> None:
+        assert type(_create_firewall_backend(FirewallBackendType.IPTABLES)) is IptablesFirewallBackend
