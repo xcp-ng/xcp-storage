@@ -1,0 +1,15 @@
+{
+    "version": 3,
+    "configurePresets": [
+        {
+            "name": "xcp-ng-8.3",
+            "displayName": "XCP-ng 8.3",
+            "description": "Build for XCP-ng 8.3.",
+            "cacheVariables": {
+                "XCP_STORAGE_FIREWALL_BACKEND": "iptables",
+                "XCP_STORAGE_FIREWALL_INPUT_CHAIN": "xapi-INPUT",
+                "XCP_STORAGE_POOL_BACKEND": "xapi"
+            }
+        }
+    ]
+}

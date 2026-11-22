@@ -12,8 +12,15 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+from enum import Enum
 from functools import lru_cache
 from pathlib import Path
+
+from xcp_storage.config.build_config import (
+    FIREWALL_BACKEND,
+    FIREWALL_INPUT_CHAIN,
+    POOL_BACKEND,
+)
 
 from xcp_storage.typing import Final, Mapping, Tuple
 
@@ -23,7 +30,27 @@ from xcp_storage.typing import Final, Mapping, Tuple
 # host's specificities (OS, firewall rules, ...).
 # ==============================================================================
 
-DEFAULT_FIREWALL_INPUT_CHAIN: Final = "xapi-INPUT"
+class FirewallBackendType(Enum):
+    """
+    Backend managing the firewall of a host.
+    """
+
+    IPTABLES = "iptables"
+
+class PoolBackendType(Enum):
+    """
+    Backend managing the hosts of the pool.
+    """
+
+    XAPI = "xapi"
+
+# ------------------------------------------------------------------------------
+
+FIREWALL_BACKEND_TYPE: Final = FirewallBackendType(FIREWALL_BACKEND)
+
+DEFAULT_FIREWALL_INPUT_CHAIN: Final = FIREWALL_INPUT_CHAIN
+
+POOL_BACKEND_TYPE: Final = PoolBackendType(POOL_BACKEND)
 
 # ------------------------------------------------------------------------------
 # Default system paths.
@@ -32,16 +59,22 @@ DEFAULT_FIREWALL_INPUT_CHAIN: Final = "xapi-INPUT"
 CONFIG_DIR_PATH: Final = Path("/etc")
 PROC_DIR_PATH: Final = Path("/proc")
 RUNTIME_DIR_PATH: Final = Path("/run")
+STATE_DIR_PATH: Final = Path("/var/lib")
 
 # ------------------------------------------------------------------------------
 # XCP paths.
 # ------------------------------------------------------------------------------
 
+_XCP_STORAGE_DIR_NAME: Final = "xcp-storage"
+
 # Configuration files of xcp-storage.
-XCP_STORAGE_CONFIG_DIR_PATH: Final = CONFIG_DIR_PATH / "xcp-storage"
+XCP_STORAGE_CONFIG_DIR_PATH: Final = CONFIG_DIR_PATH / _XCP_STORAGE_DIR_NAME
 
 # Runtime files of xcp-storage (locks, sockets, datapath states...).
-XCP_STORAGE_RUNTIME_DIR_PATH: Final = RUNTIME_DIR_PATH / "xcp-storage"
+XCP_STORAGE_RUNTIME_DIR_PATH: Final = RUNTIME_DIR_PATH / _XCP_STORAGE_DIR_NAME
+
+# Persistent files of xcp-storage local to the host (host list, backups...).
+XCP_STORAGE_STATE_DIR_PATH: Final = STATE_DIR_PATH / _XCP_STORAGE_DIR_NAME
 
 # ------------------------------------------------------------------------------
 

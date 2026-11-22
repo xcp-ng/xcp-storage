@@ -1,7 +1,7 @@
 from pathlib import Path
 
 # ------------------------------------------------------------------------------
-# Plain string: `"/proc/..."`, `Path("/run")`, `Path("/etc/...")`.
+# Plain string: `"/proc/..."`, `Path("/run")`, `Path("/etc/...")`, `Path("/var/lib/...")`.
 # ------------------------------------------------------------------------------
 
 # ruleid: python-enforce-system-dir-path-constants
@@ -20,6 +20,10 @@ self_path = Path("/proc") / "self"
 config_path = Path("/etc/xcp-storage/rpc.conf")
 # ruleid: python-enforce-system-dir-path-constants
 OTHER_CONFIG_DIR_PATH: Final = Path("/etc")
+# ruleid: python-enforce-system-dir-path-constants
+var_lib_path = Path("/var/lib/xcp")
+# ruleid: python-enforce-system-dir-path-constants
+OTHER_STATE_DIR_PATH: Final = Path("/var/lib")
 # ok: python-enforce-system-dir-path-constants
 cmdline_path = PROC_DIR_PATH / str(pid) / "cmdline"
 # ok: python-enforce-system-dir-path-constants
@@ -43,7 +47,9 @@ legacy_lock_path = Path("/var/lock/subsys")
 # ok: python-enforce-system-dir-path-constants
 var_path = Path("/var/runner")
 # ok: python-enforce-system-dir-path-constants
-var_lib_path = Path("/var/lib/xcp")
+var_library_path = Path("/var/library")
+# ok: python-enforce-system-dir-path-constants
+backups_path = XCP_STORAGE_STATE_DIR_PATH / "backups"
 
 # ------------------------------------------------------------------------------
 # F-string starting with the directory, whatever its prefix.
@@ -65,12 +71,16 @@ upper_path = F"/run/{name}"
 raw_upper_path = FR"/run/{name}"
 # ruleid: python-enforce-system-dir-path-constants
 drop_in_path = f"/etc/systemd/system/{name}.service.d"
+# ruleid: python-enforce-system-dir-path-constants
+state_path = f"/var/lib/{name}"
 # ok: python-enforce-system-dir-path-constants
 message = f"See {PROC_DIR_PATH}/self"
 # ok: python-enforce-system-dir-path-constants
 other_path = f"/runtime/{name}"
 # ok: python-enforce-system-dir-path-constants
 etcd_path = f"/etcd/{name}"
+# ok: python-enforce-system-dir-path-constants
+var_library_path = f"/var/library/{name}"
 # ok: python-enforce-system-dir-path-constants
 other_path = f"{base}/proc/{pid}"
 # ok: python-enforce-system-dir-path-constants
@@ -102,3 +112,5 @@ CONFIG_DIR_PATH: Final = Path("/etc")
 PROC_DIR_PATH: Final = Path("/proc")
 # ok: python-enforce-system-dir-path-constants
 RUNTIME_DIR_PATH: Final = Path("/run")
+# ok: python-enforce-system-dir-path-constants
+STATE_DIR_PATH: Final = Path("/var/lib")

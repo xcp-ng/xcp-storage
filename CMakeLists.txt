@@ -39,6 +39,74 @@ if (NOT DEFINED SYSTEMD_SYSTEM_UNIT_DIR)
 endif()
 
 # ------------------------------------------------------------------------------
+# Platform settings: required, given by a preset of `CMakePresets.json`
+# (e.g. `cmake --preset xcp-ng-8.3 -B build`). They are written in
+# `xcp_storage/config/build_config.py`, generated in the source tree.
+# ------------------------------------------------------------------------------
+
+# The values given after `DESCRIPTION`, if any, are the only ones accepted.
+function(xcp_storage_platform_setting NAME DESCRIPTION)
+    set(${NAME} "" CACHE STRING "${DESCRIPTION}")
+    if ("${${NAME}}" STREQUAL "")
+        message(FATAL_ERROR
+            "`${NAME}` is not set: configure with a preset (`cmake --list-presets`), "
+            "e.g. `cmake --preset xcp-ng-8.3 -B build`."
+        )
+    endif()
+
+    if (ARGN)
+        set_property(CACHE ${NAME} PROPERTY STRINGS ${ARGN})
+        if (NOT "${${NAME}}" IN_LIST ARGN)
+            message(FATAL_ERROR "Invalid `${NAME}`: `${${NAME}}`, expected one of: ${ARGN}.")
+        endif()
+    endif()
+endfunction()
+
+# ------------------------------------------------------------------------------
+
+xcp_storage_platform_setting(XCP_STORAGE_FIREWALL_BACKEND "Firewall backend."
+    "iptables"
+)
+xcp_storage_platform_setting(XCP_STORAGE_FIREWALL_INPUT_CHAIN "Firewall chain of the input rules.")
+xcp_storage_platform_setting(XCP_STORAGE_POOL_BACKEND "Pool manager giving the hosts of the pool."
+    "xapi"
+)
+
+# ------------------------------------------------------------------------------
+# Systemd units of the backends, derived from the platform settings.
+# Used in the templates (`*.in`) of the units of xcp-storage.
+# ------------------------------------------------------------------------------
+
+# Set `OUTPUT` to the unit of the value of the setting `NAME`, given as
+# `<value> <unit>` pairs: every accepted value of the setting needs its pair.
+function(xcp_storage_backend_unit OUTPUT NAME)
+    set(VALUE_UNITS ${ARGN})
+    while (VALUE_UNITS)
+        list(POP_FRONT VALUE_UNITS VALUE UNIT)
+        if ("${VALUE}" STREQUAL "${${NAME}}")
+            set(${OUTPUT} "${UNIT}" PARENT_SCOPE)
+            return()
+        endif()
+    endwhile()
+    message(FATAL_ERROR "No systemd unit known for `${NAME}`: `${${NAME}}`.")
+endfunction()
+
+xcp_storage_backend_unit(XCP_STORAGE_FIREWALL_BACKEND_UNIT XCP_STORAGE_FIREWALL_BACKEND
+    "iptables" "iptables.service"
+)
+xcp_storage_backend_unit(XCP_STORAGE_POOL_BACKEND_UNIT XCP_STORAGE_POOL_BACKEND
+    "xapi" "xapi-init-complete.target"
+)
+
+# ------------------------------------------------------------------------------
+
+configure_file(
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/xcp_storage/config/build_config.py.in
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/xcp_storage/config/build_config.py
+    @ONLY
+)
+
+# ------------------------------------------------------------------------------
 # Build info: generate `xcp_storage/build_info.py` in the source tree, so that
 # it is part of the Python package.
 # ------------------------------------------------------------------------------
@@ -100,6 +168,7 @@ endif()
 
 set(DAEMON_LIST
     "xcp-storage-fifo-lock"
+    "xcp-storage-pool-hosts"
     "xcp-storage-rpc"
 )
 

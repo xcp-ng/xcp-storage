@@ -1,0 +1,27 @@
+name: Configure project
+description: Install the build tools and configure the project with CMake
+inputs:
+  preset:
+    description: CMake preset of the target platform (`CMakePresets.json`)
+    default: xcp-ng-8.3
+  cmake-args:
+    description: Additional arguments of the configuration, separated by spaces
+    default: ""
+runs:
+  using: composite
+  steps:
+    - name: Install dependencies
+      shell: bash
+      run: |
+        sudo apt-get update
+        sudo apt-get -y install \
+          cmake \
+          pkg-config \
+          systemd-dev # Required for `systemd.pc`.
+
+    - name: Configure
+      shell: bash
+      env:
+        PRESET: ${{ inputs.preset }}
+        CMAKE_ARGS: ${{ inputs.cmake-args }}
+      run: cmake --preset "$PRESET" -S . -B build $CMAKE_ARGS

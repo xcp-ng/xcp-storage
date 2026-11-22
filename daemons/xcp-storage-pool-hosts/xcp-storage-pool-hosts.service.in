@@ -1,0 +1,13 @@
+[Unit]
+Description=XCP-ng Storage Pool Hosts
+Wants=@XCP_STORAGE_POOL_BACKEND_UNIT@
+After=@XCP_STORAGE_POOL_BACKEND_UNIT@ @XCP_STORAGE_FIREWALL_BACKEND_UNIT@
+
+[Service]
+Type=simple
+ExecStart=/usr/libexec/xcp-storage/xcp-storage-pool-hosts
+Restart=on-failure
+RestartSec=5s
+
+[Install]
+WantedBy=multi-user.target

@@ -8,6 +8,11 @@ dynamic = [
 ]
 requires-python = ">=3.7" # TODO(XCPNG-3032): Change it for modern python.
 
+[project.optional-dependencies]
+xapi = [
+    "xenapi>=26.1.11",
+]
+
 [build-system]
 requires = ["setuptools>=40"]
 build-backend = "setuptools.build_meta"

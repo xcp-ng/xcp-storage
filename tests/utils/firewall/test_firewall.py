@@ -18,15 +18,15 @@ from unittest.mock import create_autospec, MagicMock, patch
 import pytest
 
 from tests.utils.exception import raises_exactly
+from xcp_storage.config.platform import FIREWALL_BACKEND_TYPE, FirewallBackendType
 from xcp_storage.utils.firewall import (
-    _get_firewall_backend,
+    _FIREWALL_BACKEND_TYPE_TO_FACTORY,
     create_firewall_allowlist,
     update_firewall_allowlist,
     update_firewall_tcp_port,
     update_firewall_tcp_port_range,
 )
 from xcp_storage.utils.firewall.interface import FirewallBackend, FirewallError
-from xcp_storage.utils.firewall.iptables import IptablesFirewallBackend
 from xcp_storage.utils.lock.file import FileLock
 
 from xcp_storage.typing import Final, Iterator
@@ -45,7 +45,12 @@ def firewall_lock_path(tmp_path: Path) -> Iterator[Path]:
         yield firewall_lock_path
 
 @pytest.fixture
-def mock_firewall_backend(firewall_lock_path: Path) -> Iterator[MagicMock]:
+def mock_create_firewall_backend() -> Iterator[MagicMock]:
+    with patch(f"{_FIREWALL_MODULE}._create_firewall_backend", autospec=True) as mock_create_firewall_backend:
+        yield mock_create_firewall_backend
+
+@pytest.fixture
+def mock_firewall_backend(firewall_lock_path: Path, mock_create_firewall_backend: MagicMock) -> MagicMock:
     # Every method checks that it is called under the lock.
     mock_firewall_backend = create_autospec(FirewallBackend, instance=True)
 
@@ -59,8 +64,9 @@ def mock_firewall_backend(firewall_lock_path: Path) -> Iterator[MagicMock]:
         mock_firewall_backend.update_allowlist,
     ):
         method.side_effect = check_locked
-    with patch(f"{_FIREWALL_MODULE}._get_firewall_backend", autospec=True, return_value=mock_firewall_backend):
-        yield mock_firewall_backend
+
+    mock_create_firewall_backend.return_value = mock_firewall_backend
+    return mock_firewall_backend
 
 # ------------------------------------------------------------------------------
 
@@ -68,8 +74,14 @@ class TestFirewall:
     ALLOWLIST: Final = "test-hosts"
     ADDRESSES: Final = ("10.30.43.1", "10.30.43.2")
 
-    def test_backend(self) -> None:
-        assert isinstance(_get_firewall_backend(), IptablesFirewallBackend)
+    def test_every_backend_type_has_factory(self) -> None:
+        assert set(_FIREWALL_BACKEND_TYPE_TO_FACTORY) == set(FirewallBackendType)
+
+    @pytest.mark.usefixtures("mock_firewall_backend")
+    def test_build_backend(self, mock_create_firewall_backend: MagicMock) -> None:
+        # Backend of the build configuration (CMake preset).
+        create_firewall_allowlist(self.ALLOWLIST)
+        mock_create_firewall_backend.assert_called_once_with(FIREWALL_BACKEND_TYPE)
 
     def test_update_tcp_port(self, mock_firewall_backend: MagicMock) -> None:
         update_firewall_tcp_port(80, open_port=True, allowlist=self.ALLOWLIST)
