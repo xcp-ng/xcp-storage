@@ -26,6 +26,7 @@ from xcp_storage.utils.json.rpc import (
     JsonRpcRequest,
     JsonRpcRequestProcessor,
     JsonRpcResponse,
+    JsonRpcResponseServerError,
 )
 
 from xcp_storage.typing import (
@@ -223,6 +224,22 @@ class TestJsonRpcRequest:
             "code": -32602,
             "message": "Invalid params",
             "data": {"message": f"{multiply.__qualname__}() got an unexpected keyword argument 'c'"}
+        })
+
+    def test_rpc_response_error_raised_by_method(self) -> None:
+        dispatcher = JsonRpcDispatcher()
+
+        @dispatcher.method
+        def fail() -> None:
+            raise JsonRpcResponseServerError(data={"type": "conflict", "message": "Already used."})
+
+        request_processor = JsonRpcRequestProcessor(dispatcher)
+        request = JsonRpcRequest(1, "fail")
+        response = request_processor.process(request.to_json())
+        assert_response_error(response, 1, {
+            "code": -32000,
+            "message": "Server error",
+            "data": {"type": "conflict", "message": "Already used."}
         })
 
 # ------------------------------------------------------------------------------

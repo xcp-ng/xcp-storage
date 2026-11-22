@@ -488,6 +488,20 @@ def socket_wait_readable(sock: socket.socket, *, timeout: Optional[float] = None
 
 # ------------------------------------------------------------------------------
 
+def socket_close(sock: socket.socket) -> None:
+    """
+    Close `sock`, ignoring errors (e.g. already closed).
+    Shut down first: a thread blocked on it (`recv`, `select`, ...)
+    wakes up at once, which a plain `close` does not ensure.
+    """
+
+    with contextlib.suppress(Exception):
+        sock.shutdown(socket.SHUT_RDWR)
+    with contextlib.suppress(Exception):
+        sock.close()
+
+# ------------------------------------------------------------------------------
+
 def get_socket_family_str(sock: socket.socket) -> str:
     return _FAMILY_TO_STR.get(sock.family, "Unknown")
 
@@ -550,10 +564,7 @@ class Socket(contextlib.AbstractContextManager):
     def close(self) -> None:
         if self.keep_open:
             return
-        with contextlib.suppress(Exception):
-            self.sock.shutdown(socket.SHUT_RDWR)
-        with contextlib.suppress(Exception):
-            self.sock.close()
+        socket_close(self.sock)
 
     @property
     def family_str(self) -> str:

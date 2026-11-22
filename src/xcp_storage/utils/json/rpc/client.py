@@ -113,7 +113,7 @@ class JsonRpcClient(contextlib.AbstractContextManager):
                 socket.sock,
                 self._protocol.create_packet(Protocol.MessageType.CONNECT, self._seq)
             )
-        except Exception:
+        except BaseException:
             self.disconnect()
             raise
 
@@ -205,7 +205,7 @@ class JsonRpcClient(contextlib.AbstractContextManager):
             if json_response.error is None:
                 return json_response.result
             raise JsonRpcResponseError.from_payload(json_response.error)
-        except (KeyboardInterrupt, SocketDisconnectedError, SocketTimeoutError):
+        except (KeyboardInterrupt, SystemExit, SocketDisconnectedError, SocketTimeoutError):
             # Disconnect to prevent buffer corruption.
             self.disconnect()
             raise
