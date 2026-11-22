@@ -17,9 +17,9 @@ from enum import IntFlag
 import socket
 import struct
 
-from xcp_storage.network.protocol import Protocol, ProtocolError
-from xcp_storage.network.socket import socket_receive, socket_send
 from xcp_storage.utils.math import MIB
+from xcp_storage.utils.network.protocol import Protocol, ProtocolError
+from xcp_storage.utils.network.socket import socket_receive, socket_send
 
 from xcp_storage.typing import (
     Final,

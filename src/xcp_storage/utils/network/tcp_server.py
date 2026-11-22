@@ -21,8 +21,8 @@ import threading
 import time
 
 import xcp_storage.log as log
-from xcp_storage.network.socket import create_tcp_server_sock, Socket
 from xcp_storage.utils.asyncio import cancel_event_loop_tasks, close_stream_writer
+from xcp_storage.utils.network.socket import create_tcp_server_sock, Socket
 
 from xcp_storage.typing import (
     Any,

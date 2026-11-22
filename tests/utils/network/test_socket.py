@@ -25,9 +25,9 @@ from unittest.mock import (
 
 import pytest
 
-from tests.network import busy_unix_server_sock
 from tests.utils.fd import assert_no_fd_leak
-from xcp_storage.network.socket import (
+from tests.utils.network import busy_unix_server_sock
+from xcp_storage.utils.network.socket import (
     _MAX_PORT,
     _SERVER_BACKLOG,
     create_socket_pair,

@@ -17,8 +17,8 @@ import contextlib
 from enum import Enum
 import threading
 
-from xcp_storage.network.tcp_server import TcpServer
 from xcp_storage.utils.asyncio import abort_stream_writer, close_stream_writer
+from xcp_storage.utils.network.tcp_server import TcpServer
 
 from xcp_storage.typing import (
     Dict,

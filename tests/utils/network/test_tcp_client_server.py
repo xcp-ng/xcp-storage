@@ -22,18 +22,18 @@ from unittest.mock import patch
 
 import pytest
 
-from tests.network import find_free_tcp_port, run_threaded_server
-from tests.network.tls import over_plain_and_tls, TlsContexts
+from tests.utils.network import find_free_tcp_port, run_threaded_server
+from tests.utils.network.tls import over_plain_and_tls, TlsContexts
 from tests.utils.thread import create_thread_group
-from xcp_storage.network.socket import (
+from xcp_storage.utils.asyncio import close_stream_writer
+from xcp_storage.utils.contextlib import scoped_factory
+from xcp_storage.utils.network.socket import (
     get_socket_port,
     SocketDisconnectedError,
     SocketError,
 )
-from xcp_storage.network.tcp_client import TcpClient, TcpClientError
-from xcp_storage.network.tcp_server import TcpServer, TcpServerError
-from xcp_storage.utils.asyncio import close_stream_writer
-from xcp_storage.utils.contextlib import scoped_factory
+from xcp_storage.utils.network.tcp_client import TcpClient, TcpClientError
+from xcp_storage.utils.network.tcp_server import TcpServer, TcpServerError
 from xcp_storage.utils.time import Clock
 
 from xcp_storage.typing import (

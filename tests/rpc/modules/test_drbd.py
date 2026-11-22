@@ -15,8 +15,8 @@
 import pytest
 
 from tests.backends.drbd import DrbdDebugFs
-from tests.network.tls import over_plain_and_tls
 from tests.rpc import assert_rpc_server_error_message, RpcClientFactory
+from tests.utils.network.tls import over_plain_and_tls
 from tests.utils.process import ProcFs
 import xcp_storage.rpc.api as api
 from xcp_storage.utils.json.rpc import JsonRpcResponseServerError

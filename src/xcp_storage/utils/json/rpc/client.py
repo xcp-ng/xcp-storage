@@ -17,10 +17,6 @@ import ssl
 from types import TracebackType
 
 import xcp_storage.log as log
-from xcp_storage.network.protocol import Protocol, ProtocolError
-from xcp_storage.network.protocol.xcp import XcpProtocol
-from xcp_storage.network.socket import SocketDisconnectedError, SocketTimeoutError
-from xcp_storage.network.tcp_client import TcpClient
 from xcp_storage.utils.json import JsonDict, JsonList
 from xcp_storage.utils.json.rpc import (
     JsonRpcRequest,
@@ -28,6 +24,10 @@ from xcp_storage.utils.json.rpc import (
     JsonRpcResponseError,
     JsonValue,
 )
+from xcp_storage.utils.network.protocol import Protocol, ProtocolError
+from xcp_storage.utils.network.protocol.xcp import XcpProtocol
+from xcp_storage.utils.network.socket import SocketDisconnectedError, SocketTimeoutError
+from xcp_storage.utils.network.tcp_client import TcpClient
 from xcp_storage.utils.time import Timer
 
 from xcp_storage.typing import (

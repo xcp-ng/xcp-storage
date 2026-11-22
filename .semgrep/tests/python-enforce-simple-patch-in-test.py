@@ -7,7 +7,7 @@ from unittest.mock import patch
 import pytest
 
 import xcp_storage.log as log
-from xcp_storage.network.protocol.xcp import XcpProtocol
+from xcp_storage.utils.network.protocol.xcp import XcpProtocol
 from xcp_storage.utils.lock.fifo import (
     _MIN_ACQUIRE_TIMEOUT,
     FifoLock,

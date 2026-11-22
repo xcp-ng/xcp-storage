@@ -16,20 +16,20 @@ import asyncio
 import ssl
 
 import xcp_storage.log as log
-from xcp_storage.network.protocol import Protocol, ProtocolError
-from xcp_storage.network.protocol.xcp import XcpProtocol
-from xcp_storage.network.tcp_server import (
-    TCP_SERVER_DEFAULT_CLIENT_CONNECT_TIMEOUT,
-    TCP_SERVER_DEFAULT_CLIENT_IDLE_TIMEOUT,
-    TCP_SERVER_DEFAULT_MAX_CLIENTS,
-    TcpServer,
-)
 from xcp_storage.utils.json import JsonDict
 from xcp_storage.utils.json.rpc import (
     JsonRpcDispatcher,
     JsonRpcRequestProcessor,
     JsonRpcResponse,
     JsonRpcResponseParseError,
+)
+from xcp_storage.utils.network.protocol import Protocol, ProtocolError
+from xcp_storage.utils.network.protocol.xcp import XcpProtocol
+from xcp_storage.utils.network.tcp_server import (
+    TCP_SERVER_DEFAULT_CLIENT_CONNECT_TIMEOUT,
+    TCP_SERVER_DEFAULT_CLIENT_IDLE_TIMEOUT,
+    TCP_SERVER_DEFAULT_MAX_CLIENTS,
+    TcpServer,
 )
 
 from xcp_storage.typing import (

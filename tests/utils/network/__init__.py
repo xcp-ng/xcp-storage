@@ -16,13 +16,13 @@ import contextlib
 import socket
 
 from tests.utils.thread import create_thread_group
-from xcp_storage.network.socket import (
+from xcp_storage.utils.json.rpc.server import JsonRpcServer
+from xcp_storage.utils.network.socket import (
     create_unix_client_sock,
     create_unix_server_sock,
     get_socket_port,
 )
-from xcp_storage.network.tcp_server import TcpServer
-from xcp_storage.utils.json.rpc.server import JsonRpcServer
+from xcp_storage.utils.network.tcp_server import TcpServer
 
 from xcp_storage.typing import (
     cast,

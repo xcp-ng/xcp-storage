@@ -16,14 +16,14 @@ import ssl
 
 import pytest
 
-from tests.network import run_threaded_server
-from tests.network.tls import (  # noqa: F401
+from tests.rpc import RPC_CLIENT_TIMEOUT, RpcClientFactory
+from tests.utils.network import run_threaded_server
+from tests.utils.network.tls import (  # noqa: F401
     client_ssl_context,
     ssl_contexts,
     tls_contexts,
     TlsContexts,
 )
-from tests.rpc import RPC_CLIENT_TIMEOUT, RpcClientFactory
 from xcp_storage.rpc.client import RpcApiClient
 from xcp_storage.rpc.server import RpcApiServer
 from xcp_storage.utils.contextlib import scoped_factory
