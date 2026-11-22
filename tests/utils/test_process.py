@@ -12,6 +12,8 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+import os
+
 import pytest
 
 from tests.utils.exception import raises_exactly
@@ -19,14 +21,36 @@ from tests.utils.process import ProcFs
 import xcp_storage.log as log
 from xcp_storage.utils.process import (
     _get_process_cmdline_path,
+    CommandResult,
     CommandTimeoutError,
     get_process_cmdline,
+    is_process_running,
     run_command,
 )
 
 from xcp_storage.typing import Final
 
 # ==============================================================================
+
+EXEC_PATH_ECHO: Final = "/usr/bin/echo"
+
+# ------------------------------------------------------------------------------
+
+class TestIsProcessRunning:
+    PID: Final = 67
+
+    def test_running(self, proc_fs: ProcFs) -> None:
+        proc_fs.write_cmdline(self.PID, b"tapdisk\x00")
+        assert is_process_running(self.PID)
+
+    @pytest.mark.usefixtures("proc_fs")
+    def test_not_running(self) -> None:
+        assert not is_process_running(self.PID)
+
+    def test_current_process(self) -> None:
+        assert is_process_running(os.getpid())
+
+# ------------------------------------------------------------------------------
 
 class TestGetProcessCmdline:
     PID: Final = 67
@@ -57,6 +81,12 @@ class TestGetProcessCmdline:
 
 # ------------------------------------------------------------------------------
 
+class TestRunCommand:
+    def test_result(self) -> None:
+        result = run_command([EXEC_PATH_ECHO, "hello"], simple=False)
+        assert result == CommandResult(stdout="hello\n")
+        assert (result.stdout, result.stderr, result.ret_code) == ("hello\n", "", 0)
+
 class TestRunCommandWithTimeout:
     TIMEOUT: Final = 0.2
 
@@ -67,4 +97,4 @@ class TestRunCommandWithTimeout:
         assert exc_info.value.reason == f"Command did not end within {self.TIMEOUT} second(s)."
 
     def test_success_within_timeout(self) -> None:
-        assert run_command(["/usr/bin/echo", "hello"], timeout=10.0) == "hello\n"
+        assert run_command([EXEC_PATH_ECHO, "hello"], timeout=10.0) == "hello\n"

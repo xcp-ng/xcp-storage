@@ -36,5 +36,5 @@ def get_openers(resource_name: str, volume_number: int) -> List[JsonDict]:
     # Some linters, such as pyrefly, may struggle to convert a type to a recursive type.
     # We therefore perform a static check (so that it's validated by linters) and we cast it explicitly.
     if PYREFLY and not MYPY:
-        assert_type(openers, List[Dict[str, Union[int, str, List[str]]]])
+        assert_type(openers, List[Dict[str, Union[int, str, List[str]]]]) # pragma: no cover
     return cast(List[JsonDict], openers)

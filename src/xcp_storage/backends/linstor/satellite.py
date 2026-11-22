@@ -22,24 +22,22 @@ from xcp_storage.typing import Final
 
 # ==============================================================================
 
+LINSTOR_SATELLITE_SERVICE: Final = "linstor-satellite"
+
 LINSTOR_SATELLITE_PORT_PLAIN: Final = 3366
 LINSTOR_SATELLITE_PORT_SSL: Final = 3367
-
-# ------------------------------------------------------------------------------
-
-_SERVICE_LINSTOR_SATELLITE: Final = "linstor-satellite"
 
 # ------------------------------------------------------------------------------
 
 class LinstorSatellite:
     @staticmethod
     def is_running() -> bool:
-        return is_service_active(_SERVICE_LINSTOR_SATELLITE)
+        return is_service_active(LINSTOR_SATELLITE_SERVICE)
 
     @staticmethod
     def enable_and_start() -> None:
-        enable_and_start_service(_SERVICE_LINSTOR_SATELLITE)
+        enable_and_start_service(LINSTOR_SATELLITE_SERVICE)
 
     @staticmethod
     def disable_and_stop() -> None:
-        disable_and_stop_service(_SERVICE_LINSTOR_SATELLITE)
+        disable_and_stop_service(LINSTOR_SATELLITE_SERVICE)
