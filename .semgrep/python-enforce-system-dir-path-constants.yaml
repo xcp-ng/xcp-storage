@@ -8,12 +8,12 @@ rules:
       constant_propagation: false
     patterns:
       - pattern-either:
-          # Plain string: `"/proc/..."`, `Path("/run")`.
+          # Plain string: `"/proc/..."`, `Path("/run")`, `Path("/etc/...")`.
           - patterns:
               - pattern: '"$STRING"'
               - metavariable-regex:
                   metavariable: $STRING
-                  regex: '^/(?:proc|run)(?:/|$)'
+                  regex: '^/(?:etc|proc|run)(?:/|$)'
               # Semgrep also sees the text fragments of an f-string as strings, so:
               # in `f"{base}/proc/{pid}"`, `"/proc/"` is not an absolute path.
               - pattern-not-inside: 'f"..."'
@@ -22,7 +22,8 @@ rules:
           # after the opening quote, then `/`, `{` or the closing quote (not `/process`).
           - patterns:
               - pattern: 'f"..."'
-              - pattern-regex: '\b(?i:r?fr?)["'']/(?:proc|run)(?:/|\{|["''])'
+              - pattern-regex: '\b(?i:r?fr?)["'']/(?:etc|proc|run)(?:/|\{|["''])'
       # The definitions themselves.
+      - pattern-not-inside: 'CONFIG_DIR_PATH: Final = Path("/etc")'
       - pattern-not-inside: 'PROC_DIR_PATH: Final = Path("/proc")'
       - pattern-not-inside: 'RUNTIME_DIR_PATH: Final = Path("/run")'

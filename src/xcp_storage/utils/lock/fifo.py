@@ -16,7 +16,7 @@ from pathlib import Path
 import re
 import time
 
-from xcp_storage.config.platform import RUNTIME_DIR_PATH
+from xcp_storage.config.platform import XCP_STORAGE_RUNTIME_DIR_PATH
 import xcp_storage.log as log
 from xcp_storage.network.socket import (
     create_unix_client_sock,
@@ -26,6 +26,7 @@ from xcp_storage.network.socket import (
     SocketError,
     SocketNotListeningError,
 )
+from xcp_storage.utils.check import check_regex_match
 from xcp_storage.utils.lock import (
     DEFAULT_LOCK_ACQUIRE_DURATION_THRESHOLD,
     DEFAULT_LOCK_DURATION_THRESHOLD,
@@ -65,7 +66,7 @@ _LOCK_SERVER_REPLY: Final = b"L"
 
 # Directory of the sockets of the services: one socket, and one service instance, per lock name.
 # (Must match the unit `xcp-storage-fifo-lock@.service`.)
-_LOCKS_DIR_PATH: Final = RUNTIME_DIR_PATH / "xcp-storage" / "locks"
+_LOCKS_DIR_PATH: Final = XCP_STORAGE_RUNTIME_DIR_PATH / "locks"
 
 # Name of the lock daemon, also the name of its template service.
 _LOCK_DAEMON_NAME: Final = "xcp-storage-fifo-lock"
@@ -119,8 +120,7 @@ class FifoLock(HandleLock):
         acquire_duration_threshold: Optional[float] = DEFAULT_LOCK_ACQUIRE_DURATION_THRESHOLD,
         lock_duration_threshold: Optional[float] = DEFAULT_LOCK_DURATION_THRESHOLD
     ) -> None:
-        if not _LOCK_NAME_REGEX.fullmatch(name):
-            raise ValueError(f"Invalid lock name: `{name}`.")
+        check_regex_match(name, _LOCK_NAME_REGEX, "lock name")
 
         self._socket: Optional[Socket] = None
 

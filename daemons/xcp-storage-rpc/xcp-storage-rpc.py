@@ -15,11 +15,11 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 import configparser
-from pathlib import Path
 import signal
 import sys
 from types import FrameType
 
+from xcp_storage.config.platform import XCP_STORAGE_CONFIG_DIR_PATH
 import xcp_storage.log as log
 from xcp_storage.rpc.server import RpcApiServer
 from xcp_storage.version import XcpStorageVersion
@@ -35,7 +35,7 @@ logger = log.get_logger() # Use default logger.
 DEFAULT_ADDRESS: Final = "0.0.0.0" # noqa: S104
 DEFAULT_PORT: Final = 3630
 
-CONFIG_PATH: Final = Path("/etc/xcp-storage/rpc.conf")
+CONFIG_PATH: Final = XCP_STORAGE_CONFIG_DIR_PATH / "rpc.conf"
 
 # ------------------------------------------------------------------------------
 

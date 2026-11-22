@@ -29,12 +29,23 @@ DEFAULT_FIREWALL_INPUT_CHAIN: Final = "xapi-INPUT"
 # Default system paths.
 # ------------------------------------------------------------------------------
 
+CONFIG_DIR_PATH: Final = Path("/etc")
 PROC_DIR_PATH: Final = Path("/proc")
 RUNTIME_DIR_PATH: Final = Path("/run")
 
 # ------------------------------------------------------------------------------
+# XCP paths.
+# ------------------------------------------------------------------------------
 
-_OS_RELEASE_PATH: Final = Path("/etc/os-release")
+# Configuration files of xcp-storage.
+XCP_STORAGE_CONFIG_DIR_PATH: Final = CONFIG_DIR_PATH / "xcp-storage"
+
+# Runtime files of xcp-storage (locks, sockets, datapath states...).
+XCP_STORAGE_RUNTIME_DIR_PATH: Final = RUNTIME_DIR_PATH / "xcp-storage"
+
+# ------------------------------------------------------------------------------
+
+_OS_RELEASE_PATH: Final = CONFIG_DIR_PATH / "os-release"
 
 @lru_cache(maxsize=None)
 def get_os_ids() -> Tuple[str, ...]:
