@@ -20,6 +20,7 @@ import pytest
 from tests.utils.exception import raises_exactly
 from xcp_storage.utils.check import (
     check_absolute_path,
+    check_ipv4_address,
     check_non_negative_int,
     check_regex_match,
     check_type,
@@ -90,7 +91,7 @@ class TestCheckRegexMatch:
             check_regex_match(b"abc", self.REGEX, CHECK_VALUE_DESCRIPTION) # type: ignore[arg-type]
 
 class TestCheckAbsolutePath:
-    @pytest.mark.parametrize("path", [PurePath("/"), PurePosixPath("/dev/sda"), Path("/var/lib/image")])
+    @pytest.mark.parametrize("path", [PurePath("/"), PurePosixPath("/dev/sda"), Path("/srv/image")])
     def test_valid(self, path: PurePath) -> None:
         check_absolute_path(path, CHECK_VALUE_DESCRIPTION)
 
@@ -108,6 +109,17 @@ class TestCheckAbsolutePath:
     def test_not_a_path(self) -> None:
         with raises_exactly(ValueError, f"Not a {CHECK_VALUE_DESCRIPTION}: `'/dev/sda'` (type `str`)."):
             check_absolute_path("/dev/sda", CHECK_VALUE_DESCRIPTION) # type: ignore[arg-type]
+
+class TestCheckIpv4Address:
+    @pytest.mark.parametrize("value", ["10.30.43.1", "0.0.0.0", "255.255.255.255"]) # noqa: S104
+    def test_valid(self, value: str) -> None:
+        check_ipv4_address(value, CHECK_VALUE_DESCRIPTION)
+
+    # IPv6, host name, network, out of range, incomplete.
+    @pytest.mark.parametrize("value", ["::1", "stor-1", "10.30.43.0/24", "10.30.43.256", "10.30.43", ""])
+    def test_invalid(self, value: str) -> None:
+        with raises_exactly(ValueError, f"Invalid {CHECK_VALUE_DESCRIPTION}: `{value}`."):
+            check_ipv4_address(value, CHECK_VALUE_DESCRIPTION)
 
 # ------------------------------------------------------------------------------
 
