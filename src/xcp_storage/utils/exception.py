@@ -12,13 +12,34 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+import traceback
+
 # ==============================================================================
 
-def stringify_exception(exception: Exception) -> str:
+def format_exception_traceback(exception: BaseException) -> str:
+    """
+    Return the traceback of `exception` as printed by the interpreter.
+    """
+
+    # TODO(XCPNG-3032): Pass only `exception` in python 3.10.
+    return "".join(traceback.format_exception(type(exception), exception, exception.__traceback__))
+
+def stringify_exception(exception: BaseException) -> str:
+    """
+    Return the message of `exception`, or its type when it has none
+    (raised without argument) or cannot be printed.
+    Never raises.
+    """
+
     try:
-        return str(exception)
+        message = str(exception)
     except Exception:
+        message = ""
+
+    if not message:
         try:
-            return f"Exception of type `{exception.__class__.__name__}`."
+            message = f"Exception of type `{exception.__class__.__name__}`."
         except Exception:
-            return "Unknown Exception."
+            message = "Unknown Exception."
+
+    return message

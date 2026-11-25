@@ -246,6 +246,7 @@ banned-from = [
     "tempfile",
     "threading",
     "time",
+    "traceback",
     "uuid"
 ]
 
