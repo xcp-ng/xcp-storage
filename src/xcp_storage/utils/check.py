@@ -65,6 +65,15 @@ def check_absolute_path(path: PurePath, description: str) -> None:
     if not path.is_absolute():
         raise ValueError(f"Invalid {description}: `{path}`.")
 
+def check_non_empty_path(path: PurePath, description: str) -> None:
+    """
+    Raise `ValueError` if `path` is not a `PurePath` or is empty.
+    """
+
+    check_type(path, PurePath, description)
+    if not path.parts:
+        raise ValueError(f"Invalid {description}: `{path}`.")
+
 def check_ipv4_address(value: str, description: str) -> None:
     """
     Raise `ValueError` if `value` is not an IPv4 address (dotted decimal form, e.g. `10.0.0.1`).

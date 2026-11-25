@@ -21,6 +21,7 @@ from tests.utils.exception import raises_exactly
 from xcp_storage.utils.check import (
     check_absolute_path,
     check_ipv4_address,
+    check_non_empty_path,
     check_non_negative_int,
     check_regex_match,
     check_type,
@@ -109,6 +110,21 @@ class TestCheckAbsolutePath:
     def test_not_a_path(self) -> None:
         with raises_exactly(ValueError, f"Not a {CHECK_VALUE_DESCRIPTION}: `'/dev/sda'` (type `str`)."):
             check_absolute_path("/dev/sda", CHECK_VALUE_DESCRIPTION) # type: ignore[arg-type]
+
+class TestCheckNonEmptyPath:
+    @pytest.mark.parametrize("path", [PurePath("/"), PurePosixPath("/dev/sda"), PurePath("image"), Path("../image")])
+    def test_valid(self, path: PurePath) -> None:
+        check_non_empty_path(path, CHECK_VALUE_DESCRIPTION)
+
+    # An empty path is the current directory (`.`).
+    @pytest.mark.parametrize("path", [PurePath(), PurePath("./")])
+    def test_empty(self, path: PurePath) -> None:
+        with raises_exactly(ValueError, f"Invalid {CHECK_VALUE_DESCRIPTION}: `.`."):
+            check_non_empty_path(path, CHECK_VALUE_DESCRIPTION)
+
+    def test_not_a_path(self) -> None:
+        with raises_exactly(ValueError, f"Not a {CHECK_VALUE_DESCRIPTION}: `'image'` (type `str`)."):
+            check_non_empty_path("image", CHECK_VALUE_DESCRIPTION) # type: ignore[arg-type]
 
 class TestCheckIpv4Address:
     @pytest.mark.parametrize("value", ["10.30.43.1", "0.0.0.0", "255.255.255.255"]) # noqa: S104
