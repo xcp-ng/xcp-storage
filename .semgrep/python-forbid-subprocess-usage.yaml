@@ -7,7 +7,7 @@ rules:
       include:
         - src/
       exclude:
-        - src/xcp_storage/utils/process.py
+        - /src/xcp_storage/utils/process.py
     pattern-either:
       - pattern: "import subprocess"
       - pattern: "from pty import spawn"
