@@ -62,6 +62,8 @@ ignore_missing_imports = true
 # ./setup.py build
 # stubgen --include-private build/lib/linstor/ -o <XCP_STORAGE_PATH>/stubs/
 # echo "from . import sharedconsts as consts" >> <XCP_STORAGE_PATH>/stubs/linstor/__init__.pyi
+# # The surface used by the project is then typed by hand (see the header of `stubs/linstor/__init__.pyi`): merge the
+# # existing stubs into the generated ones, do not overwrite them.
 [[tool.mypy.overrides]]
 module = "linstor.*"
 
@@ -232,6 +234,7 @@ banned-from = [
     "inspect",
     "ipaddress",
     "json",
+    "linstor",
     "logging",
     "logging.handlers",
     "multiprocessing",

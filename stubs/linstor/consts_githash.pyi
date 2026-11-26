@@ -1,1 +1,0 @@
-GITHASH: str
