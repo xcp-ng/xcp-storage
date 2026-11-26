@@ -5,7 +5,7 @@ Stub for the XenAPI module: https://xapi-project.github.io/xen-api/overview.html
 
 import http.client as httplib
 import xmlrpc.client as xmlrpclib
-from _typeshed import Incomplete as Incomplete
+from _typeshed import Incomplete
 
 translation: Incomplete
 API_VERSION_1_1: str
@@ -76,8 +76,10 @@ class Session(xmlrpclib.ServerProxy):
     transport: Incomplete
     last_login_method: Incomplete
     last_login_params: Incomplete
-    API_version: Incomplete
     xenapi: _Dispatcher
+
+    @property
+    def API_version(self) -> str: ...
 
     def __init__(
         self,

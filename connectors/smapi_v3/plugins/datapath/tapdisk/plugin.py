@@ -21,7 +21,6 @@ from xcp_storage.connectors.smapi_v3.utils import (
     handle_plugin_exception,
 )
 from xcp_storage.utils.decorator import decorate_all_methods
-from xcp_storage.utils.json.rpc import JsonValue
 
 from xcp_storage.typing import override
 
@@ -30,7 +29,7 @@ from xcp_storage.typing import override
 @decorate_all_methods(handle_plugin_exception)
 class Implementation(xapi.storage.api.v5.plugin.Plugin_skeleton):
     @override
-    def query(self, dbg: str) -> JsonValue:
+    def query(self, dbg: str) -> xapi.storage.api.v5.plugin.QueryResult:
         return {
             "plugin": "tapdisk",
             "name": "Tapdisk datapath plugin.",

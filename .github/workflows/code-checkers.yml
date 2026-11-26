@@ -36,6 +36,9 @@ jobs:
       - name: Pyrefly check
         run: uv run pyrefly check
 
+      - name: Stubtest check
+        run: MYPYPATH=stubs uv run python -m mypy.stubtest XenAPI --mypy-config-file pyproject.toml --ignore-missing-stub
+
   semgrep:
     name: Semgrep
     runs-on: ubuntu-latest
