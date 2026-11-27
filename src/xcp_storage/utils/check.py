@@ -37,6 +37,15 @@ def check_type(value: object, value_type: type, description: str) -> None:
     if not isinstance(value, value_type) or (isinstance(value, bool) and value_type is not bool):
         raise ValueError(f"Not a {description}: `{value!r}` (type `{type(value).__name__}`).")
 
+def check_positive_int(value: int, description: str) -> None:
+    """
+    Raise `ValueError` if `value` is not an `int` or is not positive (0 included).
+    """
+
+    check_type(value, int, description)
+    if value < 1:
+        raise ValueError(f"Invalid {description}: `{value}`.")
+
 def check_non_negative_int(value: int, description: str) -> None:
     """
     Raise `ValueError` if `value` is not an `int` or is negative.

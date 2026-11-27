@@ -23,6 +23,7 @@ from xcp_storage.utils.check import (
     check_ipv4_address,
     check_non_empty_path,
     check_non_negative_int,
+    check_positive_int,
     check_regex_match,
     check_type,
     is_str_integer,
@@ -54,6 +55,25 @@ class TestCheckType:
     def test_invalid(self, value: object, value_type: type, shown_value: str) -> None:
         with raises_exactly(ValueError, f"Not a {CHECK_VALUE_DESCRIPTION}: {shown_value}."):
             check_type(value, value_type, CHECK_VALUE_DESCRIPTION)
+
+class TestCheckPositiveInt:
+    @pytest.mark.parametrize("value", [1, 2, 2**40])
+    def test_valid(self, value: int) -> None:
+        check_positive_int(value, CHECK_VALUE_DESCRIPTION)
+
+    @pytest.mark.parametrize("value", [0, -1, -(2**40)])
+    def test_not_positive(self, value: int) -> None:
+        with raises_exactly(ValueError, f"Invalid {CHECK_VALUE_DESCRIPTION}: `{value}`."):
+            check_positive_int(value, CHECK_VALUE_DESCRIPTION)
+
+    @pytest.mark.parametrize("value, shown_value", [
+        (True, "`True` (type `bool`)"),
+        (1.0, "`1.0` (type `float`)"),
+        ("1", "`'1'` (type `str`)"),
+    ])
+    def test_not_an_int(self, value: object, shown_value: str) -> None:
+        with raises_exactly(ValueError, f"Not a {CHECK_VALUE_DESCRIPTION}: {shown_value}."):
+            check_positive_int(value, CHECK_VALUE_DESCRIPTION) # type: ignore[arg-type]
 
 class TestCheckNonNegativeInt:
     @pytest.mark.parametrize("value", [0, 1, 2**40])
