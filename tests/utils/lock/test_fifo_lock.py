@@ -21,7 +21,6 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from tests.network import busy_unix_server_sock
 from tests.utils.exception import raises_exactly
 from tests.utils.fd import assert_no_fd_leak, occupied_low_fds
 from tests.utils.lock.fifo_lock_service import (
@@ -40,13 +39,8 @@ from tests.utils.lock.lock_variant import (
     ReadWriteLockFactory,
 )
 from tests.utils.lock.pending_acquisition import PendingAcquisitionFactory, QueuedWriterFactory
+from tests.utils.network import busy_unix_server_sock
 from tests.utils.thread import create_thread_group
-from xcp_storage.network.socket import (
-    create_unix_client_sock,
-    create_unix_server_sock,
-    socket_wait_readable,
-    SocketDisconnectedError,
-)
 from xcp_storage.utils.file import FD_SETSIZE
 from xcp_storage.utils.lock import LockError, LockTimeoutError
 from xcp_storage.utils.lock.fifo import (
@@ -55,6 +49,12 @@ from xcp_storage.utils.lock.fifo import (
     _MAX_CONNECTION_ATTEMPTS,
     FifoLock,
     ReadWriteFifoLock,
+)
+from xcp_storage.utils.network.socket import (
+    create_unix_client_sock,
+    create_unix_server_sock,
+    socket_wait_readable,
+    SocketDisconnectedError,
 )
 from xcp_storage.utils.service import escape_service_instance, ServiceError
 from xcp_storage.utils.sync import wait_for_condition

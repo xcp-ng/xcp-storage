@@ -12,7 +12,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-from tests.network.fault_injecting_tcp_proxy import FaultInjectingTcpProxy
+from tests.utils.network.fault_injecting_tcp_proxy import FaultInjectingTcpProxy
 
 from xcp_storage.typing import (
     Final,

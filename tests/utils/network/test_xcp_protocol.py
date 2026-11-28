@@ -17,9 +17,9 @@ from unittest.mock import patch
 
 import pytest
 
-from xcp_storage.network.protocol import Protocol, ProtocolError
-from xcp_storage.network.protocol.xcp import XcpProtocol
-from xcp_storage.network.socket import SocketDisconnectedError, SocketPair
+from xcp_storage.utils.network.protocol import Protocol, ProtocolError
+from xcp_storage.utils.network.protocol.xcp import XcpProtocol
+from xcp_storage.utils.network.socket import SocketDisconnectedError, SocketPair
 
 from xcp_storage.typing import Final, Iterator
 

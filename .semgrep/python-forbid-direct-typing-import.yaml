@@ -5,7 +5,7 @@ rules:
     message: "Import from `xcp_storage.typing`, not from `typing` or `typing_extensions`."
     paths:
       exclude:
-        - src/xcp_storage/typing/
+        - /src/xcp_storage/typing/
     pattern-either:
       - pattern: "import typing"
       - pattern: "import typing_extensions"

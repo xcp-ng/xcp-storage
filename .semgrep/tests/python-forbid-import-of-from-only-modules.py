@@ -9,7 +9,7 @@ import enum, functools
 # ruleid: python-forbid-import-of-from-only-modules
 import xcp_storage.utils.process
 # ruleid: python-forbid-import-of-from-only-modules
-import tests.network.tls
+import tests.utils.network.tls
 # ruleid: python-forbid-import-of-from-only-modules
 import unittest.mock
 # ok: python-forbid-import-of-from-only-modules

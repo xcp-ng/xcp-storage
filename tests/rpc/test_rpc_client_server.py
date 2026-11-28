@@ -20,18 +20,18 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from tests.network.tls import over_plain_and_tls
 from tests.rpc import RPC_CLIENT_TIMEOUT, RpcClientFactory
+from tests.utils.network.tls import over_plain_and_tls
 from tests.utils.thread import create_thread_group
-from xcp_storage.network.protocol import Protocol, ProtocolError
-from xcp_storage.network.protocol.xcp import XcpProtocol
-from xcp_storage.network.socket import SocketDisconnectedError
-from xcp_storage.network.tcp_client import TcpClient, TcpClientError
 import xcp_storage.rpc.api as api
 from xcp_storage.rpc.client import RpcApiClient
 from xcp_storage.rpc.server import RpcApiServer
 from xcp_storage.utils.json import JsonDict
 from xcp_storage.utils.json.rpc import JsonRpcRequestError, JsonRpcResponseError
+from xcp_storage.utils.network.protocol import Protocol, ProtocolError
+from xcp_storage.utils.network.protocol.xcp import XcpProtocol
+from xcp_storage.utils.network.socket import SocketDisconnectedError
+from xcp_storage.utils.network.tcp_client import TcpClient, TcpClientError
 
 from xcp_storage.typing import (
     Final,

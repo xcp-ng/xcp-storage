@@ -13,7 +13,7 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -45,3 +45,8 @@ def proc_fs(tmp_path: Path) -> Iterator[ProcFs]:
 
     with patch(f"{_PROCESS_MODULE}.PROC_DIR_PATH", tmp_path / "proc"):
         yield ProcFs()
+
+@pytest.fixture
+def mock_kill_process() -> Iterator[MagicMock]:
+    with patch(f"{_PROCESS_MODULE}.kill_process", autospec=True) as mock_kill_process:
+        yield mock_kill_process

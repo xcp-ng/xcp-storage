@@ -14,11 +14,11 @@
 
 import pytest
 
-from tests.network.tls import over_plain_and_tls
 from tests.rpc import RpcClientFactory
-from xcp_storage.network.socket import SocketTimeoutError
+from tests.utils.network.tls import over_plain_and_tls
 import xcp_storage.rpc.api as api
 from xcp_storage.utils.json.rpc import JsonRpcRequestError, JsonRpcResponseError
+from xcp_storage.utils.network.socket import SocketTimeoutError
 
 from xcp_storage.typing import Final
 

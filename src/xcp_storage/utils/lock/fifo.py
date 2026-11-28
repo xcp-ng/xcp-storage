@@ -18,14 +18,6 @@ import time
 
 from xcp_storage.config.platform import XCP_STORAGE_RUNTIME_DIR_PATH
 import xcp_storage.log as log
-from xcp_storage.network.socket import (
-    create_unix_client_sock,
-    Socket,
-    SocketBusyError,
-    SocketDisconnectedError,
-    SocketError,
-    SocketNotListeningError,
-)
 from xcp_storage.utils.check import check_regex_match
 from xcp_storage.utils.lock import (
     DEFAULT_LOCK_ACQUIRE_DURATION_THRESHOLD,
@@ -33,6 +25,14 @@ from xcp_storage.utils.lock import (
     HandleLock,
     LockError,
     ReadWriteHandleLock,
+)
+from xcp_storage.utils.network.socket import (
+    create_unix_client_sock,
+    Socket,
+    SocketBusyError,
+    SocketDisconnectedError,
+    SocketError,
+    SocketNotListeningError,
 )
 from xcp_storage.utils.service import (
     escape_service_instance,

@@ -1,0 +1,62 @@
+rules:
+  - id: python-enforce-command-error-reason
+    languages: [python]
+    severity: WARNING
+    message: "The message of a `CommandError` is always `Command execution error.`: use its `reason` (stderr), not the error itself."
+    patterns:
+      # A `try` pattern only matches a `try` of the same structure (observed on 1.46.0 and 1.182.1): the plain shape
+      # matches no `try` with an `else` or a `finally` clause, hence a shape for each. Several handlers are matched by
+      # the plain shape on 1.182.1 only: on 1.46.0, the last shape finds a handler after one without a variable
+      # (`except (..., $X, ...):` also matches `except X:`), and a handler before another one is still missed.
+      - pattern-either:
+          - pattern-inside: |
+              try:
+                  ...
+              except $COMMAND_ERROR as $ERROR:
+                  ...
+          - pattern-inside: |
+              try:
+                  ...
+              except $COMMAND_ERROR as $ERROR:
+                  ...
+              finally:
+                  ...
+          - pattern-inside: |
+              try:
+                  ...
+              except $COMMAND_ERROR as $ERROR:
+                  ...
+              else:
+                  ...
+          - pattern-inside: |
+              try:
+                  ...
+              except $COMMAND_ERROR as $ERROR:
+                  ...
+              else:
+                  ...
+              finally:
+                  ...
+          - pattern-inside: |
+              try:
+                  ...
+              except (..., $OTHER, ...):
+                  ...
+              except $COMMAND_ERROR as $ERROR:
+                  ...
+      - pattern-either:
+          # Interpolated in an f-string, with or without a conversion.
+          - pattern: f"...{$ERROR}..."
+          - pattern: f"...{$ERROR!s}..."
+          - pattern: f"...{$ERROR!r}..."
+          # Converted.
+          - pattern: str($ERROR)
+          - pattern: repr($ERROR)
+          # Given to a logger, which converts it.
+          - pattern: logger.$METHOD(..., $ERROR, ...)
+      # `CommandError` or `CommandTimeoutError`, alone or in a tuple (sub-expressions are matched).
+      - metavariable-pattern:
+          metavariable: $COMMAND_ERROR
+          pattern-either:
+            - pattern: xcp_storage.utils.process.CommandError
+            - pattern: xcp_storage.utils.process.CommandTimeoutError

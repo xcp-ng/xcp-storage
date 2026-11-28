@@ -5,6 +5,6 @@ rules:
     message: "Import from `xcp_storage.log`, not from `logging`."
     paths:
       exclude:
-        - src/xcp_storage/log.py
+        - /src/xcp_storage/log.py
     # Note: "from", "as", ... imports are also handled by semgrep with this simple pattern.
     pattern: "import logging"

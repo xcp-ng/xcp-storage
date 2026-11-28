@@ -14,16 +14,15 @@
 
 import ssl
 
-from xcp_storage.network.tcp_server import (
-    TCP_SERVER_DEFAULT_CLIENT_CONNECT_TIMEOUT,
-    TCP_SERVER_DEFAULT_CLIENT_IDLE_TIMEOUT,
-    TCP_SERVER_DEFAULT_MAX_CLIENTS,
-)
-
 # Import API mods to ensure ApiDispatcher is exported with all public methods.
 import xcp_storage.rpc.api  # noqa: F401, ICN001
 from xcp_storage.rpc.dispatcher import ApiDispatcher
 from xcp_storage.utils.json.rpc.server import JsonRpcServer
+from xcp_storage.utils.network.tcp_server import (
+    TCP_SERVER_DEFAULT_CLIENT_CONNECT_TIMEOUT,
+    TCP_SERVER_DEFAULT_CLIENT_IDLE_TIMEOUT,
+    TCP_SERVER_DEFAULT_MAX_CLIENTS,
+)
 
 from xcp_storage.typing import Optional
 

@@ -36,6 +36,9 @@ jobs:
       - name: Pyrefly check
         run: uv run pyrefly check
 
+      - name: Stubtest check
+        run: MYPYPATH=stubs uv run python -m mypy.stubtest linstor XenAPI --mypy-config-file pyproject.toml --ignore-missing-stub
+
   semgrep:
     name: Semgrep
     runs-on: ubuntu-latest
@@ -54,6 +57,7 @@ jobs:
 
       - name: Semgrep scan
         # Python Flask is excluded due to false positive errors in the JSON-RPC utilities.
+        # The `python36` compatibility rules for Python 3.6 are also disabled (`Popen(encoding=)`, `ssl`, ...).
         run: |
           uv run semgrep scan \
           --config p/default \
@@ -61,4 +65,7 @@ jobs:
           --config .semgrep \
           --error \
           --exclude-rule python.flask.security.audit.directly-returned-format-string.directly-returned-format-string \
+          --exclude-rule python.lang.compatibility.python36.python36-compatibility-Popen1 \
+          --exclude-rule python.lang.compatibility.python36.python36-compatibility-Popen2 \
+          --exclude-rule python.lang.compatibility.python36.python36-compatibility-ssl \
           --exclude-rule yaml.github-actions.security.github-actions-mutable-action-tag.github-actions-mutable-action-tag

@@ -16,12 +16,12 @@ from pathlib import Path
 
 import pytest
 
-from tests.network.tls import (  # noqa: F401
+from tests.utils.network.tls import (  # noqa: F401
     client_ssl_context,
     ssl_contexts,
     tls_contexts,
 )
-from xcp_storage.network.socket import create_socket_pair, SocketPair
+from xcp_storage.utils.network.socket import create_socket_pair, SocketPair
 
 from xcp_storage.typing import Final, Iterator
 

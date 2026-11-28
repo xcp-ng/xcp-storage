@@ -5,7 +5,7 @@ rules:
     message: "Measure durations with `Clock` or `Timer`, not directly with `time.$FUNCTION`."
     paths:
       exclude:
-        - src/xcp_storage/utils/time.py
+        - /src/xcp_storage/utils/time.py
     patterns:
       - pattern: "time.$FUNCTION"
       - metavariable-regex:

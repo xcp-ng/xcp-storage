@@ -37,6 +37,15 @@ def check_type(value: object, value_type: type, description: str) -> None:
     if not isinstance(value, value_type) or (isinstance(value, bool) and value_type is not bool):
         raise ValueError(f"Not a {description}: `{value!r}` (type `{type(value).__name__}`).")
 
+def check_positive_int(value: int, description: str) -> None:
+    """
+    Raise `ValueError` if `value` is not an `int` or is not positive (0 included).
+    """
+
+    check_type(value, int, description)
+    if value < 1:
+        raise ValueError(f"Invalid {description}: `{value}`.")
+
 def check_non_negative_int(value: int, description: str) -> None:
     """
     Raise `ValueError` if `value` is not an `int` or is negative.
@@ -63,6 +72,15 @@ def check_absolute_path(path: PurePath, description: str) -> None:
 
     check_type(path, PurePath, description)
     if not path.is_absolute():
+        raise ValueError(f"Invalid {description}: `{path}`.")
+
+def check_non_empty_path(path: PurePath, description: str) -> None:
+    """
+    Raise `ValueError` if `path` is not a `PurePath` or is empty.
+    """
+
+    check_type(path, PurePath, description)
+    if not path.parts:
         raise ValueError(f"Invalid {description}: `{path}`.")
 
 def check_ipv4_address(value: str, description: str) -> None:

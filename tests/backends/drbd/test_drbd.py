@@ -12,7 +12,10 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+from enum import Enum
+import errno
 import json
+import os
 from pathlib import Path
 from unittest.mock import (
     MagicMock,
@@ -22,7 +25,13 @@ from unittest.mock import (
 import pytest
 
 from tests.backends.drbd import (
+    _DRBD_MODULE,
+    create_drbdsetup_held_open_error,
+    create_drbdsetup_no_such_resource_error,
     DrbdDebugFs,
+    DRBDSETUP_NO_SUCH_RESOURCE_EXIT_CODE,
+    DRBDSETUP_STATE_CHANGE_FAILED_EXIT_CODE,
+    TEST_DRBD_MISSING_NODE_NAME,
     TEST_DRBD_PRIMARY_NODE_ADDRESS,
     TEST_DRBD_PRIMARY_NODE_NAME,
     TEST_DRBD_RESOURCE_NAME,
@@ -43,7 +52,7 @@ from xcp_storage.backends.drbd import (
     DrbdRole,
 )
 import xcp_storage.log as log
-from xcp_storage.utils.process import CommandResult
+from xcp_storage.utils.process import _create_failed_command_error, CommandError, CommandResult
 
 from xcp_storage.typing import (
     Any,
@@ -58,7 +67,9 @@ from xcp_storage.typing import (
 
 # ==============================================================================
 
-_DRBD_MODULE: Final = Drbd.__module__
+# Resource unknown to `drbdsetup`, and its answer.
+MISSING_RESOURCE_NAME: Final = "xcp-volume-frite"
+MISSING_RESOURCE_STDERR: Final = create_drbdsetup_no_such_resource_error(MISSING_RESOURCE_NAME)
 
 # ------------------------------------------------------------------------------
 
@@ -71,6 +82,51 @@ def mock_run_command() -> Iterator[MagicMock]:
 def mock_get_process_cmdline() -> Iterator[MagicMock]:
     with patch(f"{_DRBD_MODULE}.get_process_cmdline", autospec=True) as mock_get_process_cmdline:
         yield mock_get_process_cmdline
+
+@pytest.fixture
+def drbdsetup_not_found_error(mock_run_command: MagicMock) -> CommandError:
+    error = _create_failed_command_error(
+        [_EXEC_PATH_DRBDSETUP],
+        FileNotFoundError(errno.ENOENT, os.strerror(errno.ENOENT), _EXEC_PATH_DRBDSETUP),
+        action="run"
+    )
+    mock_run_command.side_effect = error
+    return error
+
+# ------------------------------------------------------------------------------
+# Helpers to change fields of a DRBD JSON status.
+# ------------------------------------------------------------------------------
+
+class DrbdJsonStatusObject(Enum):
+    """
+    Objects of the DRBD statuses of the fixtures (`drbd_json_status_*`), by their path
+    from the resource in the JSON of `drbdsetup status --json`.
+    """
+
+    # `suspended`, `role`.
+    RESOURCE = ()
+
+    # Volumes on this node: `disk-state`, `client`, `quorum`.
+    LOCAL_FIRST_VOLUME = ("devices", 0)
+    LOCAL_SECOND_VOLUME = ("devices", 1)
+
+    # The connection to the peer: `connection-state`, `peer-role`.
+    CONNECTION = ("connections", 0)
+
+    # Volumes on the peer: `peer-disk-state`, `peer-client`.
+    PEER_FIRST_VOLUME = ("connections", 0, "peer_devices", 0)
+    PEER_SECOND_VOLUME = ("connections", 0, "peer_devices", 1)
+
+DrbdJsonStatusFields = Sequence[Tuple[DrbdJsonStatusObject, str, Any]]
+
+def set_drbd_json_status_fields(mock_run_command: MagicMock, json_status: str, fields: DrbdJsonStatusFields) -> None:
+    status = json.loads(json_status)
+    for status_object, name, value in fields:
+        json_object = status[0]
+        for path_key in status_object.value:
+            json_object = json_object[path_key]
+        json_object[name] = value
+    mock_run_command.return_value = CommandResult(stdout=json.dumps(status))
 
 # ------------------------------------------------------------------------------
 
@@ -95,6 +151,7 @@ def test_build_drbd_path(resource_name: str, volume_number: int, expected_path: 
     ("../a/", ""),
     (f"{DRBD_BY_RES_PREFIX}a/x", ""),
     (f"{DRBD_BY_RES_PREFIX}a/-1", ""),
+    (f"{DRBD_BY_RES_PREFIX}a/\u0661", ""),
     (f"{DRBD_BY_RES_PREFIX}a/0/", ""),
     ("../a/0/", ""),
     ("/invalid/path/format", ""),
@@ -135,22 +192,22 @@ class TestGetDrbdStatus:
 
     def test_command_failure(self, mock_run_command: MagicMock, caplog: pytest.LogCaptureFixture) -> None:
         mock_run_command.return_value = CommandResult(
-            stdout="[]", stderr="xcp-volume-frite: No such resource\n", ret_code=10
+            stdout="[]", stderr=MISSING_RESOURCE_STDERR, ret_code=DRBDSETUP_NO_SUCH_RESOURCE_EXIT_CODE
         )
         with caplog.at_level(log.INFO):
-            assert _get_drbd_status("xcp-volume-frite") == {}
+            assert _get_drbd_status(MISSING_RESOURCE_NAME) == {}
         assert (
-            "Failed to get DRBD status of resource `xcp-volume-frite`: "
-            "`xcp-volume-frite: No such resource` (exit code 10)."
+            f"Failed to get DRBD status of resource `{MISSING_RESOURCE_NAME}`: "
+            f"`{MISSING_RESOURCE_STDERR.strip()}` (exit code {DRBDSETUP_NO_SUCH_RESOURCE_EXIT_CODE})."
         ) in caplog.text
 
-    def test_command_not_found(self, mock_run_command: MagicMock, caplog: pytest.LogCaptureFixture) -> None:
-        mock_run_command.side_effect = FileNotFoundError(2, "No such file or directory", _EXEC_PATH_DRBDSETUP)
+    def test_command_not_found(
+        self, drbdsetup_not_found_error: CommandError, caplog: pytest.LogCaptureFixture
+    ) -> None:
         with caplog.at_level(log.INFO):
             assert _get_drbd_status(TEST_DRBD_RESOURCE_NAME) == {}
         assert (
-            "Failed to get DRBD status of resource `xcp-volume-patate`: "
-            f"`[Errno 2] No such file or directory: '{_EXEC_PATH_DRBDSETUP}'`."
+            f"Failed to get DRBD status of resource `{TEST_DRBD_RESOURCE_NAME}`: `{drbdsetup_not_found_error.reason}`."
         ) in caplog.text
 
     @pytest.mark.parametrize("stdout", ["", "["])
@@ -160,7 +217,7 @@ class TestGetDrbdStatus:
         mock_run_command.return_value = CommandResult(stdout=stdout)
         with caplog.at_level(log.INFO):
             assert _get_drbd_status(TEST_DRBD_RESOURCE_NAME) == {}
-        assert "Failed to read DRBD status of resource `xcp-volume-patate` as JSON" in caplog.text
+        assert f"Failed to read DRBD status of resource `{TEST_DRBD_RESOURCE_NAME}` as JSON" in caplog.text
 
     def test_empty_list(self, mock_run_command: MagicMock, caplog: pytest.LogCaptureFixture) -> None:
         mock_run_command.return_value = CommandResult(stdout="[]")
@@ -171,27 +228,26 @@ class TestGetDrbdStatus:
 # ------------------------------------------------------------------------------
 
 class TestGetDrbdConnectionAddress:
-    def test_connection_address_a(
-        self, mock_run_command: MagicMock, drbd_json_status_primary: str
+    def test_peer_address(
+        self, mock_run_command: MagicMock, drbd_json_status_primary: str, drbd_json_status_secondary: str
     ) -> None:
         mock_run_command.return_value = CommandResult(stdout=drbd_json_status_primary)
         assert Drbd.get_connection_address(TEST_DRBD_RESOURCE_NAME, TEST_DRBD_SECONDARY_NODE_NAME) == \
             TEST_DRBD_SECONDARY_NODE_ADDRESS
 
-    def test_connection_address_b(
-        self, mock_run_command: MagicMock, drbd_json_status_secondary: str
-    ) -> None:
         mock_run_command.return_value = CommandResult(stdout=drbd_json_status_secondary)
         assert Drbd.get_connection_address(TEST_DRBD_RESOURCE_NAME, TEST_DRBD_PRIMARY_NODE_NAME) == \
             TEST_DRBD_PRIMARY_NODE_ADDRESS
 
     def test_unknown_node(self, mock_run_command: MagicMock, drbd_json_status_primary: str) -> None:
         mock_run_command.return_value = CommandResult(stdout=drbd_json_status_primary)
-        assert Drbd.get_connection_address(TEST_DRBD_RESOURCE_NAME, "sr123-s67") == ""
+        assert Drbd.get_connection_address(TEST_DRBD_RESOURCE_NAME, TEST_DRBD_MISSING_NODE_NAME) == ""
 
     def test_status_error(self, mock_run_command: MagicMock) -> None:
-        mock_run_command.return_value = CommandResult(stderr="xcp-volume-frite: No such resource\n", ret_code=10)
-        assert Drbd.get_connection_address("xcp-volume-frite", TEST_DRBD_SECONDARY_NODE_NAME) == ""
+        mock_run_command.return_value = CommandResult(
+            stderr=MISSING_RESOURCE_STDERR, ret_code=DRBDSETUP_NO_SUCH_RESOURCE_EXIT_CODE
+        )
+        assert Drbd.get_connection_address(MISSING_RESOURCE_NAME, TEST_DRBD_MISSING_NODE_NAME) == ""
 
 # ------------------------------------------------------------------------------
 
@@ -209,47 +265,31 @@ class TestGetDrbdPrimaryAddress:
         assert Drbd.get_primary_address(TEST_DRBD_RESOURCE_NAME) == TEST_DRBD_PRIMARY_NODE_ADDRESS
 
     def test_status_error(self, mock_run_command: MagicMock) -> None:
-        mock_run_command.return_value = CommandResult(stderr="xcp-volume-frite: No such resource\n", ret_code=10)
-        assert Drbd.get_primary_address("xcp-volume-frite") == ""
+        mock_run_command.return_value = CommandResult(
+            stderr=MISSING_RESOURCE_STDERR, ret_code=DRBDSETUP_NO_SUCH_RESOURCE_EXIT_CODE
+        )
+        assert Drbd.get_primary_address(MISSING_RESOURCE_NAME) == ""
 
 # ------------------------------------------------------------------------------
 
-# Fields to set in a DRBD status: path of their object in the status, name and value of each field.
-DrbdStatusFields = Sequence[Tuple[Tuple[Any, ...], str, Any]]
-
 class TestIsDrbdHealthy:
-    RESOURCE_PATH: Final = ()
-    LOCAL_VOLUME_PATH: Final = ("devices", 0)
-    CONNECTION_PATH: Final = ("connections", 0)
-    PEER_VOLUME_PATH: Final = ("connections", 0, "peer_devices", 0)
-
     # Healthy.
     LOCAL_CLIENT_FIELDS: Final = (
-        (LOCAL_VOLUME_PATH, "disk-state", DrbdDiskState.DISKLESS),
-        (LOCAL_VOLUME_PATH, "client", True)
+        (DrbdJsonStatusObject.LOCAL_FIRST_VOLUME, "disk-state", DrbdDiskState.DISKLESS),
+        (DrbdJsonStatusObject.LOCAL_FIRST_VOLUME, "client", True)
     )
     PEER_CLIENT_FIELDS: Final = (
-        (PEER_VOLUME_PATH, "peer-disk-state", DrbdDiskState.DISKLESS),
-        (PEER_VOLUME_PATH, "peer-client", True)
+        (DrbdJsonStatusObject.PEER_FIRST_VOLUME, "peer-disk-state", DrbdDiskState.DISKLESS),
+        (DrbdJsonStatusObject.PEER_FIRST_VOLUME, "peer-client", True)
     )
 
     # Not healthy.
     LOCAL_DETACHED_DISK_FIELDS: Final = (
-        (LOCAL_VOLUME_PATH, "disk-state", DrbdDiskState.DISKLESS),
+        (DrbdJsonStatusObject.LOCAL_FIRST_VOLUME, "disk-state", DrbdDiskState.DISKLESS),
     )
     PEER_DETACHED_DISK_FIELDS: Final = (
-        (PEER_VOLUME_PATH, "peer-disk-state", DrbdDiskState.DISKLESS),
+        (DrbdJsonStatusObject.PEER_FIRST_VOLUME, "peer-disk-state", DrbdDiskState.DISKLESS),
     )
-
-    @staticmethod
-    def set_status_fields(mock_run_command: MagicMock, status_json: str, fields: DrbdStatusFields) -> None:
-        status = json.loads(status_json)
-        for path, name, value in fields:
-            status_object = status[0]
-            for path_key in path:
-                status_object = status_object[path_key]
-            status_object[name] = value
-        mock_run_command.return_value = CommandResult(stdout=json.dumps(status))
 
     @pytest.mark.parametrize("fields", [
         (),
@@ -257,20 +297,20 @@ class TestIsDrbdHealthy:
         PEER_CLIENT_FIELDS
     ], ids=["diskful", "local-diskless", "peer-diskless"])
     def test_healthy(
-        self, mock_run_command: MagicMock, drbd_json_status_primary: str, fields: DrbdStatusFields
+        self, mock_run_command: MagicMock, drbd_json_status_primary: str, fields: DrbdJsonStatusFields
     ) -> None:
-        self.set_status_fields(mock_run_command, drbd_json_status_primary, fields)
+        set_drbd_json_status_fields(mock_run_command, drbd_json_status_primary, fields)
         assert Drbd.is_healthy(TEST_DRBD_RESOURCE_NAME)
 
     @pytest.mark.parametrize("fields", [
-        ((LOCAL_VOLUME_PATH, "disk-state", DrbdDiskState.OUTDATED), ),
-        ((PEER_VOLUME_PATH, "peer-disk-state", DrbdDiskState.OUTDATED), ),
-        ((CONNECTION_PATH, "connection-state", DrbdConnectionState.CONNECTING), ),
+        ((DrbdJsonStatusObject.LOCAL_FIRST_VOLUME, "disk-state", DrbdDiskState.OUTDATED), ),
+        ((DrbdJsonStatusObject.PEER_FIRST_VOLUME, "peer-disk-state", DrbdDiskState.OUTDATED), ),
+        ((DrbdJsonStatusObject.CONNECTION, "connection-state", DrbdConnectionState.CONNECTING), ),
         LOCAL_DETACHED_DISK_FIELDS,
         PEER_DETACHED_DISK_FIELDS,
         (*LOCAL_CLIENT_FIELDS, *PEER_CLIENT_FIELDS),
-        ((RESOURCE_PATH, "suspended", True), ),
-        ((LOCAL_VOLUME_PATH, "quorum", False), )
+        ((DrbdJsonStatusObject.RESOURCE, "suspended", True), ),
+        ((DrbdJsonStatusObject.LOCAL_FIRST_VOLUME, "quorum", False), )
     ], ids=[
         "local-volume-outdated",
         "peer-volume-outdated",
@@ -282,21 +322,46 @@ class TestIsDrbdHealthy:
         "no-quorum"
     ])
     def test_not_healthy(
-        self, mock_run_command: MagicMock, drbd_json_status_primary: str, fields: DrbdStatusFields
+        self, mock_run_command: MagicMock, drbd_json_status_primary: str, fields: DrbdJsonStatusFields
     ) -> None:
-        self.set_status_fields(mock_run_command, drbd_json_status_primary, fields)
+        set_drbd_json_status_fields(mock_run_command, drbd_json_status_primary, fields)
         assert not Drbd.is_healthy(TEST_DRBD_RESOURCE_NAME)
+
+    @pytest.mark.parametrize("fields, healthy", [
+        ((
+            (DrbdJsonStatusObject.LOCAL_SECOND_VOLUME, "disk-state", DrbdDiskState.DISKLESS),
+            (DrbdJsonStatusObject.LOCAL_SECOND_VOLUME, "client", True)
+        ), True),
+        ((
+            (DrbdJsonStatusObject.LOCAL_SECOND_VOLUME, "disk-state", DrbdDiskState.DISKLESS),
+            (DrbdJsonStatusObject.LOCAL_SECOND_VOLUME, "client", True),
+            (DrbdJsonStatusObject.PEER_SECOND_VOLUME, "peer-disk-state", DrbdDiskState.DISKLESS),
+            (DrbdJsonStatusObject.PEER_SECOND_VOLUME, "peer-client", True)
+        ), False),
+        (((DrbdJsonStatusObject.PEER_SECOND_VOLUME, "peer-disk-state", DrbdDiskState.OUTDATED), ), False)
+    ], ids=["second-volume-local-diskless", "second-volume-no-disk", "second-volume-peer-outdated"])
+    def test_two_volumes(
+        self,
+        mock_run_command: MagicMock,
+        drbd_json_status_primary_two_volumes: str,
+        fields: DrbdJsonStatusFields,
+        *,
+        healthy: bool
+    ) -> None:
+        set_drbd_json_status_fields(mock_run_command, drbd_json_status_primary_two_volumes, fields)
+        assert Drbd.is_healthy(TEST_DRBD_RESOURCE_NAME) == healthy
 
     def test_invalid_status(self, mock_run_command: MagicMock, drbd_json_status_primary: str) -> None:
         status = json.loads(drbd_json_status_primary)
         del status[0]["devices"]
         mock_run_command.return_value = CommandResult(stdout=json.dumps(status))
-
         assert not Drbd.is_healthy(TEST_DRBD_RESOURCE_NAME)
 
     def test_status_error(self, mock_run_command: MagicMock) -> None:
-        mock_run_command.return_value = CommandResult(stderr="xcp-volume-frite: No such resource\n", ret_code=10)
-        assert not Drbd.is_healthy("xcp-volume-frite")
+        mock_run_command.return_value = CommandResult(
+            stderr=MISSING_RESOURCE_STDERR, ret_code=DRBDSETUP_NO_SUCH_RESOURCE_EXIT_CODE
+        )
+        assert not Drbd.is_healthy(MISSING_RESOURCE_NAME)
 
 # ------------------------------------------------------------------------------
 
@@ -317,7 +382,7 @@ class TestGetDrbdLocalOpeners:
         }]
         opener_data = [d for d in data if not d.get("invalid_cmdline")]
 
-        drbd_debug_fs.write_openers("res-test", 0, "".join(
+        drbd_debug_fs.write_openers(TEST_DRBD_RESOURCE_NAME, 0, "".join(
             f"{d['process_name']} {d['pid']} {d['open_duration']}\n"
             if not d.get("invalid_cmdline")
             else d["invalid_cmdline"]
@@ -327,7 +392,7 @@ class TestGetDrbdLocalOpeners:
         cmdline_mapping = {d["pid"]: d["cmdline"] for d in opener_data}
         mock_get_process_cmdline.side_effect = lambda pid: cmdline_mapping.get(pid, [])
 
-        openers = Drbd.get_local_openers("res-test", 0)
+        openers = Drbd.get_local_openers(TEST_DRBD_RESOURCE_NAME, 0)
 
         assert len(openers) == len(opener_data)
         for i, expected in enumerate(opener_data):
@@ -393,55 +458,152 @@ class TestGetDrbdLocalOpeners:
     def test_invalid_opener_line_is_ignored(
         self, drbd_debug_fs: DrbdDebugFs, caplog: pytest.LogCaptureFixture, line: str
     ) -> None:
-        drbd_debug_fs.write_openers("res-test", 0, f"{line}\n")
+        drbd_debug_fs.write_openers(TEST_DRBD_RESOURCE_NAME, 0, f"{line}\n")
 
         with caplog.at_level(log.WARNING):
-            assert Drbd.get_local_openers("res-test", 0) == []
-        assert f"Unable to parse DRBD opener line of volume `res-test/0` with: `{line}`." in caplog.text
+            assert Drbd.get_local_openers(TEST_DRBD_RESOURCE_NAME, 0) == []
+        assert (
+            f"Unable to parse DRBD opener line of volume `{TEST_DRBD_RESOURCE_NAME}/0` with: `{line}`."
+        ) in caplog.text
 
     @pytest.mark.usefixtures("drbd_debug_fs")
     def test_file_not_found(self, caplog: pytest.LogCaptureFixture) -> None:
-        openers_path = _get_drbd_debug_resource_openers_path("res-test", 0)
+        openers_path = _get_drbd_debug_resource_openers_path(TEST_DRBD_RESOURCE_NAME, 0)
 
         with caplog.at_level(log.INFO):
-            assert Drbd.get_local_openers("res-test", 0) == []
+            assert Drbd.get_local_openers(TEST_DRBD_RESOURCE_NAME, 0) == []
         assert (
-            "Unable to get DRBD openers of volume `res-test/0`: "
-            f"`[Errno 2] No such file or directory: '{openers_path}'`."
+            f"Unable to read DRBD openers of volume `{TEST_DRBD_RESOURCE_NAME}/0` from `{openers_path}`: "
+            f"`{os.strerror(errno.ENOENT)}`."
         ) in caplog.text
 
 # ------------------------------------------------------------------------------
 
-class TestDemoteDrbd:
-    def test_success(self, mock_run_command: MagicMock) -> None:
-        mock_run_command.return_value = CommandResult()
-        assert Drbd.demote("res-test")
+class TestIsDrbdPromotable:
+    LOCAL_SECONDARY_FIELDS: Final = ((DrbdJsonStatusObject.RESOURCE, "role", DrbdRole.SECONDARY), )
 
-    def test_command_not_found(self, mock_run_command: MagicMock, caplog: pytest.LogCaptureFixture) -> None:
-        mock_run_command.side_effect = FileNotFoundError(2, "No such file or directory", _EXEC_PATH_DRBDSETUP)
+    @pytest.mark.parametrize("fields", [
+        (),
+        LOCAL_SECONDARY_FIELDS,
+        (*LOCAL_SECONDARY_FIELDS, (DrbdJsonStatusObject.LOCAL_FIRST_VOLUME, "disk-state", DrbdDiskState.INCONSISTENT)),
+        (
+            *LOCAL_SECONDARY_FIELDS,
+            (DrbdJsonStatusObject.LOCAL_FIRST_VOLUME, "disk-state", DrbdDiskState.DISKLESS),
+            (DrbdJsonStatusObject.LOCAL_FIRST_VOLUME, "client", True)
+        ),
+        (
+            *LOCAL_SECONDARY_FIELDS,
+            (DrbdJsonStatusObject.PEER_FIRST_VOLUME, "peer-disk-state", DrbdDiskState.INCONSISTENT)
+        )
+    ], ids=["primary", "secondary", "local-synchronizing", "local-diskless", "peer-synchronizing"])
+    def test_promotable(
+        self, mock_run_command: MagicMock, drbd_json_status_primary: str, fields: DrbdJsonStatusFields
+    ) -> None:
+        set_drbd_json_status_fields(mock_run_command, drbd_json_status_primary, fields)
+        assert Drbd.is_promotable(TEST_DRBD_RESOURCE_NAME)
+
+    @pytest.mark.parametrize("fields", [
+        (
+            *LOCAL_SECONDARY_FIELDS,
+            (DrbdJsonStatusObject.LOCAL_FIRST_VOLUME, "disk-state", DrbdDiskState.INCONSISTENT),
+            (DrbdJsonStatusObject.PEER_FIRST_VOLUME, "peer-disk-state", DrbdDiskState.INCONSISTENT)
+        ),
+        (
+            *LOCAL_SECONDARY_FIELDS,
+            (DrbdJsonStatusObject.LOCAL_FIRST_VOLUME, "disk-state", DrbdDiskState.DISKLESS),
+            (DrbdJsonStatusObject.CONNECTION, "connection-state", DrbdConnectionState.CONNECTING)
+        ),
+        ((DrbdJsonStatusObject.RESOURCE, "suspended", True), ),
+        ((DrbdJsonStatusObject.LOCAL_FIRST_VOLUME, "quorum", False), )
+    ], ids=["no-up-to-date-data", "peer-not-connected", "suspended", "no-quorum"])
+    def test_not_promotable(
+        self, mock_run_command: MagicMock, drbd_json_status_primary: str, fields: DrbdJsonStatusFields
+    ) -> None:
+        set_drbd_json_status_fields(mock_run_command, drbd_json_status_primary, fields)
+        assert not Drbd.is_promotable(TEST_DRBD_RESOURCE_NAME)
+
+    @pytest.mark.parametrize("fields, promotable", [
+        ((
+            *LOCAL_SECONDARY_FIELDS,
+            (DrbdJsonStatusObject.LOCAL_SECOND_VOLUME, "disk-state", DrbdDiskState.INCONSISTENT)
+        ), True),
+        ((
+            *LOCAL_SECONDARY_FIELDS,
+            (DrbdJsonStatusObject.LOCAL_SECOND_VOLUME, "disk-state", DrbdDiskState.INCONSISTENT),
+            (DrbdJsonStatusObject.PEER_SECOND_VOLUME, "peer-disk-state", DrbdDiskState.INCONSISTENT)
+        ), False)
+    ], ids=["second-volume-local-synchronizing", "second-volume-no-up-to-date-data"])
+    def test_two_volumes(
+        self,
+        mock_run_command: MagicMock,
+        drbd_json_status_primary_two_volumes: str,
+        fields: DrbdJsonStatusFields,
+        *,
+        promotable: bool
+    ) -> None:
+        set_drbd_json_status_fields(mock_run_command, drbd_json_status_primary_two_volumes, fields)
+        assert Drbd.is_promotable(TEST_DRBD_RESOURCE_NAME) == promotable
+
+    def test_peer_primary(self, mock_run_command: MagicMock, drbd_json_status_secondary: str) -> None:
+        mock_run_command.return_value = CommandResult(stdout=drbd_json_status_secondary)
+        assert not Drbd.is_promotable(TEST_DRBD_RESOURCE_NAME)
+
+    def test_invalid_status(self, mock_run_command: MagicMock, drbd_json_status_primary: str) -> None:
+        status = json.loads(drbd_json_status_primary)
+        del status[0]["devices"]
+        mock_run_command.return_value = CommandResult(stdout=json.dumps(status))
+        assert not Drbd.is_promotable(TEST_DRBD_RESOURCE_NAME)
+
+    def test_status_error(self, mock_run_command: MagicMock) -> None:
+        mock_run_command.return_value = CommandResult(
+            stderr=MISSING_RESOURCE_STDERR, ret_code=DRBDSETUP_NO_SUCH_RESOURCE_EXIT_CODE
+        )
+        assert not Drbd.is_promotable(MISSING_RESOURCE_NAME)
+
+# ------------------------------------------------------------------------------
+
+class TestPromoteDrbd:
+    def test_command_not_found(
+        self, drbdsetup_not_found_error: CommandError, caplog: pytest.LogCaptureFixture
+    ) -> None:
         with caplog.at_level(log.INFO):
-            assert not Drbd.demote("res-test")
+            assert not Drbd.promote(TEST_DRBD_RESOURCE_NAME)
         assert (
-            "Failed to demote DRBD resource `res-test`: "
-            f"`[Errno 2] No such file or directory: '{_EXEC_PATH_DRBDSETUP}'`."
+            f"Failed to promote DRBD resource `{TEST_DRBD_RESOURCE_NAME}`: `{drbdsetup_not_found_error.reason}`."
+        ) in caplog.text
+
+    def test_primary_on_another_node(self, mock_run_command: MagicMock, caplog: pytest.LogCaptureFixture) -> None:
+        stderr = f"{TEST_DRBD_RESOURCE_NAME}: State change failed: (-1) Multiple primaries not allowed by config\n"
+        mock_run_command.return_value = CommandResult(stderr=stderr, ret_code=DRBDSETUP_STATE_CHANGE_FAILED_EXIT_CODE)
+        with caplog.at_level(log.INFO):
+            assert not Drbd.promote(TEST_DRBD_RESOURCE_NAME)
+        assert f"Failed to promote DRBD resource `{TEST_DRBD_RESOURCE_NAME}`: `{stderr}`." in caplog.text
+
+class TestDemoteDrbd:
+    def test_command_not_found(
+        self, drbdsetup_not_found_error: CommandError, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        with caplog.at_level(log.INFO):
+            assert not Drbd.demote(TEST_DRBD_RESOURCE_NAME)
+        assert (
+            f"Failed to demote DRBD resource `{TEST_DRBD_RESOURCE_NAME}`: `{drbdsetup_not_found_error.reason}`."
         ) in caplog.text
 
     def test_demote_drbd_open_on_another_node(
         self, mock_run_command: MagicMock, caplog: pytest.LogCaptureFixture
     ) -> None:
         stderr = (
-            "xcp-volume-ad084d58-c12b-42df-affa-8cda2321580b: State change failed: "
-            "(-12) Device is held open by someone\n"
+            f"{create_drbdsetup_held_open_error(TEST_DRBD_RESOURCE_NAME)}"
             "additional info from kernel:\n"
             "/dev/drbd1261 open_ro_cnt:0, open_rw_cnt:2; list of openers follows\n"
             "drbd1261 opened by python (pid 483388) at 2026-06-30 21:15:38.690\n"
             "drbd1261 opened by python (pid 482584) at 2026-06-30 21:14:14.425\n"
         )
-        mock_run_command.return_value = CommandResult(stderr=stderr, ret_code=11)
+        mock_run_command.return_value = CommandResult(stderr=stderr, ret_code=DRBDSETUP_STATE_CHANGE_FAILED_EXIT_CODE)
 
         with caplog.at_level(log.INFO):
-            assert not Drbd.demote("res-test")
-        assert f"Failed to demote DRBD resource `res-test`: `{stderr}`." in caplog.text
+            assert not Drbd.demote(TEST_DRBD_RESOURCE_NAME)
+        assert f"Failed to demote DRBD resource `{TEST_DRBD_RESOURCE_NAME}`: `{stderr}`." in caplog.text
 
 # ------------------------------------------------------------------------------
 
@@ -469,10 +631,12 @@ class TestInvalidDrbdArguments:
     ) -> None:
         for call in (
             lambda: Drbd.build_path(resource_name, 0),
-            lambda: Drbd.get_connection_address(resource_name, TEST_DRBD_SECONDARY_NODE_NAME),
+            lambda: Drbd.get_connection_address(resource_name, TEST_DRBD_MISSING_NODE_NAME),
             lambda: Drbd.get_primary_address(resource_name),
             lambda: Drbd.get_local_openers(resource_name, 0),
             lambda: Drbd.is_healthy(resource_name),
+            lambda: Drbd.is_promotable(resource_name),
+            lambda: Drbd.promote(resource_name),
             lambda: Drbd.demote(resource_name)
         ):
             with pytest.raises(ValueError, match=message):

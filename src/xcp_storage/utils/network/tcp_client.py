@@ -16,7 +16,7 @@ import contextlib
 import ssl
 from types import TracebackType
 
-from xcp_storage.network.socket import (
+from xcp_storage.utils.network.socket import (
     create_tcp_client_sock,
     Socket,
     SocketCertificateError,

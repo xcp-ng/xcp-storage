@@ -24,8 +24,12 @@ dev = [
     "pyrefly>=0.14.0",
     "pytest>=7.4.4",
     "pytest-cov>=4.1.0",
+    # Current version of XCP-ng 8.3.
+    "python-linstor==1.27.1",
     "ruff>=0.15.6",
     "semgrep>=1.46.0",
+    # Provides `distutils` (removed in Python 3.12) to python-linstor 1.27.1.
+    "setuptools>=68",
 ]
 
 [tool.coverage.run]
@@ -44,6 +48,7 @@ files = [
     "tests"
 ]
 
+disallow_untyped_calls = true
 disallow_untyped_defs = true
 enable_error_code = ["explicit-override"]
 explicit_package_bases = true
@@ -58,6 +63,8 @@ ignore_missing_imports = true
 # ./setup.py build
 # stubgen --include-private build/lib/linstor/ -o <XCP_STORAGE_PATH>/stubs/
 # echo "from . import sharedconsts as consts" >> <XCP_STORAGE_PATH>/stubs/linstor/__init__.pyi
+# # The surface used by the project is then typed by hand (see the header of `stubs/linstor/__init__.pyi`): merge the
+# # existing stubs into the generated ones, do not overwrite them.
 [[tool.mypy.overrides]]
 module = "linstor.*"
 
@@ -228,6 +235,7 @@ banned-from = [
     "inspect",
     "ipaddress",
     "json",
+    "linstor",
     "logging",
     "logging.handlers",
     "multiprocessing",
@@ -246,6 +254,7 @@ banned-from = [
     "tempfile",
     "threading",
     "time",
+    "traceback",
     "uuid"
 ]
 

@@ -37,6 +37,17 @@ def _get_temporary_file_prefix(path: PurePath) -> str:
 
 # ------------------------------------------------------------------------------
 
+def close_fd(fd: int) -> None:
+    """
+    Close a file descriptor, ignoring the errors.
+
+    Nothing useful can be done if `close` fails (on Linux the descriptor is released anyway),
+    and the error must not hide the exception being handled or break a release.
+    """
+
+    with contextlib.suppress(OSError):
+        os.close(fd)
+
 def get_file_size(path: PurePath) -> int:
     """
     Return the size in bytes of the file or block device at `path` (as a reminder:
@@ -49,16 +60,8 @@ def get_file_size(path: PurePath) -> int:
     finally:
         close_fd(fd)
 
-def close_fd(fd: int) -> None:
-    """
-    Close a file descriptor, ignoring the errors.
-
-    Nothing useful can be done if `close` fails (on Linux the descriptor is released anyway),
-    and the error must not hide the exception being handled or break a release.
-    """
-    with contextlib.suppress(OSError):
-        os.close(fd)
-
+# ------------------------------------------------------------------------------
+# Symlinks.
 # ------------------------------------------------------------------------------
 
 def create_hard_link(path: PurePath, target_path: PurePath) -> None:
@@ -70,6 +73,8 @@ def create_hard_link(path: PurePath, target_path: PurePath) -> None:
     # TODO(XCPNG-3032): Use `Path.hardlink_to` in python 3.10.
     os.link(target_path, path)
 
+# ------------------------------------------------------------------------------
+# Atomic/sync calls.
 # ------------------------------------------------------------------------------
 
 def write_file_atomically(path: PurePath, text: str, *, mode: int = 0o644) -> None:
@@ -88,6 +93,22 @@ def write_file_atomically(path: PurePath, text: str, *, mode: int = 0o644) -> No
 
         Path(tmp_file.name).replace(path)
 
+def sync_directory(path: PurePath) -> None:
+    """
+    Write to the disk the entries of the directory `path`: the files created, linked, renamed or removed in it. The
+    `fsync` of a file does not cover its entry, e.g. a new hard link may be lost by a crash.
+    """
+
+    fd = os.open(path, os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC)
+    try:
+        os.fsync(fd)
+    finally:
+        close_fd(fd)
+
+# ------------------------------------------------------------------------------
+# Remove helpers.
+# ------------------------------------------------------------------------------
+
 def remove_file(path: PurePath, *, missing_ok: bool = False) -> None:
     """
     Remove a file `path`. Cannot remove a directory.
@@ -101,19 +122,20 @@ def remove_file(path: PurePath, *, missing_ok: bool = False) -> None:
         if not missing_ok:
             raise
 
-@contextlib.contextmanager
-def keep_files_open(paths: Sequence[Tuple[StrPath, bool]]) -> Iterator[None]:
+def remove_directory_tree(path: PurePath, *, missing_ok: bool = False) -> None:
     """
-    Open each path of `paths`, for writing if its flag is set, and keep them open until the exit.
-    This helper fails with the `OSError` of the first path that cannot be opened,
-    the others already open being closed.
+    Remove the directory `path` with its content, never following a symbolic link inside it.
+    `FileNotFoundError` is raised if it does not exist, unless `missing_ok`.
     """
 
-    with scoped_factory(os.open, close_fd) as open_file:
-        for path, write in paths:
-            open_file(path, (os.O_RDWR if write else os.O_RDONLY) | os.O_CLOEXEC)
-        yield
+    try:
+        shutil.rmtree(path)
+    except FileNotFoundError:
+        if not missing_ok:
+            raise
 
+# ------------------------------------------------------------------------------
+# Temporary file/directory helpers.
 # ------------------------------------------------------------------------------
 
 @contextlib.contextmanager
@@ -152,8 +174,7 @@ def create_temporary_directory(path: Optional[PurePath] = None) -> Iterator[Path
     try:
         yield tmp_dir_path
     finally:
-        with contextlib.suppress(FileNotFoundError):
-            shutil.rmtree(tmp_dir_path)
+        remove_directory_tree(tmp_dir_path, missing_ok=True)
 
 def list_temporary_paths(path: PurePath) -> List[Path]:
     """
@@ -165,3 +186,20 @@ def list_temporary_paths(path: PurePath) -> List[Path]:
         temporary_path for temporary_path in sorted(Path(path.parent).iterdir())
         if temporary_path.name.startswith(prefix) and temporary_path.name.endswith(_TEMPORARY_FILE_SUFFIX)
     ]
+
+# ------------------------------------------------------------------------------
+# Misc.
+# ------------------------------------------------------------------------------
+
+@contextlib.contextmanager
+def keep_files_open(paths: Sequence[Tuple[StrPath, bool]]) -> Iterator[None]:
+    """
+    Open each path of `paths`, for writing if its flag is set, and keep them open until the exit.
+    This helper fails with the `OSError` of the first path that cannot be opened,
+    the others already open being closed.
+    """
+
+    with scoped_factory(os.open, close_fd) as open_file:
+        for path, write in paths:
+            open_file(path, (os.O_RDWR if write else os.O_RDONLY) | os.O_CLOEXEC)
+        yield

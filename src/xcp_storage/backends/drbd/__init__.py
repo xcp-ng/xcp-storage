@@ -23,8 +23,9 @@ from pathlib import Path
 import re
 
 import xcp_storage.log as log
-from xcp_storage.utils.check import check_non_negative_int, check_regex_match
+from xcp_storage.utils.check import check_non_negative_int, check_regex_match, is_str_unsigned_integer
 from xcp_storage.utils.process import (
+    CommandError,
     CommandResult,
     get_process_cmdline,
     run_command,
@@ -36,6 +37,7 @@ from xcp_storage.typing import (
     Final,
     Iterator,
     List,
+    NamedTuple,
     StrPath,
 )
 
@@ -172,8 +174,8 @@ def _get_drbd_status(resource_name: str) -> Dict[str, Any]:
                 resource_name, stderr.strip(), ret_code
             )
             return {}
-    except Exception as e:
-        logger.error("Failed to get DRBD status of resource `%s`: `%s`.", resource_name, e)
+    except CommandError as e:
+        logger.error("Failed to get DRBD status of resource `%s`: `%s`.", resource_name, e.reason)
         return {}
 
     try:
@@ -185,6 +187,25 @@ def _get_drbd_status(resource_name: str) -> Dict[str, Any]:
     with _handle_drbd_json_error():
         return status[0]
     return {}
+
+class _DrbdReplica(NamedTuple):
+    # A replica of a volume, as seen in a DRBD status: its disk state, and whether it is diskless (DRBD client).
+    disk_state: str
+    diskless: bool
+
+def _get_drbd_replicas_by_volume(
+    status: Dict[str, Any],
+    connections: List[Dict[str, Any]]
+) -> Dict[int, List[_DrbdReplica]]:
+    replicas_by_volume = {
+        device["volume"]: [_DrbdReplica(device["disk-state"], device["client"])] for device in status["devices"]
+    }
+    for connection in connections:
+        for peer_device in connection["peer_devices"]:
+            replicas_by_volume.setdefault(peer_device["volume"], []).append(
+                _DrbdReplica(peer_device["peer-disk-state"], peer_device["peer-client"])
+            )
+    return replicas_by_volume
 
 # ------------------------------------------------------------------------------
 
@@ -243,7 +264,7 @@ class Drbd:
             return ""
 
         resource_name = path[prefix_len:res_name_end]
-        if _REGEX_DRBD_RESOURCE_NAME.fullmatch(resource_name) and path[res_name_end + 1:].isdecimal():
+        if _REGEX_DRBD_RESOURCE_NAME.fullmatch(resource_name) and is_str_unsigned_integer(path[res_name_end + 1:]):
             return resource_name
         return ""
 
@@ -285,9 +306,12 @@ class Drbd:
         path = _get_drbd_debug_resource_openers_path(resource_name, volume_number)
         try:
             lines = path.read_text().splitlines()
-        except Exception as e:
+        except OSError as e:
             # The resource is probably available not on this node.
-            logger.info("Unable to get DRBD openers of volume `%s/%d`: `%s`.", resource_name, volume_number, e)
+            logger.info(
+                "Unable to read DRBD openers of volume `%s/%d` from `%s`: `%s`.",
+                resource_name, volume_number, path, e.strerror
+            )
             return []
 
         # The opener whose opening auto-promoted the resource has its own line, with a prefix
@@ -318,9 +342,9 @@ class Drbd:
     @staticmethod
     def is_healthy(resource_name: str) -> bool:
         """
-        Return whether `resource_name` has its I/O not suspended and the quorum
-        on this node, and its replicas holding data up to date, on this node and
-        on its peers, all connected to this node.
+        Return whether `resource_name` has its I/O not suspended and the quorum on this node, its peers all connected
+        to this node, and, for each volume, its replicas holding data up to date (diskless ones apart), on this node
+        and on its peers.
         """
 
         _check_drbd_resource_name(resource_name)
@@ -332,32 +356,73 @@ class Drbd:
             if status["suspended"] or not all(device["quorum"] for device in status["devices"]):
                 return False
 
-            disks = [(device["disk-state"], device["client"]) for device in status["devices"]]
-            for connection in status["connections"]:
-                if connection["connection-state"] != DrbdConnectionState.CONNECTED:
-                    return False
-                disks.extend(
-                    (peer_device["peer-disk-state"], peer_device["peer-client"])
-                    for peer_device in connection["peer_devices"]
-                )
+            connections = status["connections"]
+            if any(connection["connection-state"] != DrbdConnectionState.CONNECTED for connection in connections):
+                return False
 
-            return (
-                all(is_client or disk_state == DrbdDiskState.UP_TO_DATE for disk_state, is_client in disks) and
-                any(disk_state == DrbdDiskState.UP_TO_DATE for disk_state, _is_client in disks)
+            # Every replica up to date unless diskless, and at least one up to date (not all of them diskless).
+            return all(
+                all(replica.diskless or replica.disk_state == DrbdDiskState.UP_TO_DATE for replica in replicas) and
+                any(replica.disk_state == DrbdDiskState.UP_TO_DATE for replica in replicas)
+                for replicas in _get_drbd_replicas_by_volume(status, connections).values()
             )
 
         return False
 
     @staticmethod
+    def is_promotable(resource_name: str) -> bool:
+        """
+        Return whether `resource_name` can be promoted on this node now: its I/O not suspended, the quorum on this node,
+        no peer primary, and the data of each volume up to date on this node or on a connected peer (e.g. this node
+        still synchronizing, or diskless). `True` if already primary on this node.
+        """
+
+        _check_drbd_resource_name(resource_name)
+        status = _get_drbd_status(resource_name)
+        if not status:
+            return False
+
+        with _handle_drbd_json_error():
+            if (
+                status["suspended"] or
+                not all(device["quorum"] for device in status["devices"]) or
+                any(connection["peer-role"] == DrbdRole.PRIMARY for connection in status["connections"])
+            ):
+                return False
+
+            # Each volume needs its data up to date somewhere reachable: on this node, or on a peer connected to
+            # it (a disconnected peer does not count, even if up to date). The local replica may be synchronizing
+            # (inconsistent) or diskless.
+            connected_connections = [
+                connection for connection in status["connections"]
+                if connection["connection-state"] == DrbdConnectionState.CONNECTED
+            ]
+            return all(
+                any(replica.disk_state == DrbdDiskState.UP_TO_DATE for replica in replicas)
+                for replicas in _get_drbd_replicas_by_volume(status, connected_connections).values()
+            )
+
+        return False
+
+    @staticmethod
+    def promote(resource_name: str) -> bool:
+        return Drbd._change_role(resource_name, "primary", "promote")
+
+    @staticmethod
     def demote(resource_name: str) -> bool:
+        return Drbd._change_role(resource_name, "secondary", "demote")
+
+    @staticmethod
+    def _change_role(resource_name: str, command: str, action: str) -> bool:
+        # Succeeds if already in the role; a failure is logged.
         _check_drbd_resource_name(resource_name)
         error_message = ""
         try:
-            _stdout, stderr, ret_code = _run_drbdsetup_command("secondary", resource_name)
+            _stdout, stderr, ret_code = _run_drbdsetup_command(command, resource_name)
             if not ret_code:
                 return True
             error_message = stderr
-        except Exception as e:
-            error_message = str(e)
-        logger.error("Failed to demote DRBD resource `%s`: `%s`.", resource_name, error_message)
+        except CommandError as e:
+            error_message = e.reason
+        logger.error("Failed to %s DRBD resource `%s`: `%s`.", action, resource_name, error_message)
         return False

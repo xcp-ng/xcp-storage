@@ -30,7 +30,9 @@ from xcp_storage.utils.file import (
     get_file_size,
     keep_files_open,
     list_temporary_paths,
+    remove_directory_tree,
     remove_file,
+    sync_directory,
     write_file_atomically,
 )
 from xcp_storage.utils.math import MIB
@@ -66,6 +68,19 @@ class TestCloseFd:
         with patch("os.close", side_effect=OSError(error_code), autospec=True) as mock_close:
             close_fd(42)
         mock_close.assert_called_once_with(42)
+
+# ------------------------------------------------------------------------------
+
+class TestGetFileSize:
+    @pytest.mark.parametrize("size", [0, 1000, 4 * MIB])
+    def test_size(self, file_path: Path, size: int) -> None:
+        with file_path.open("wb") as file:
+            file.truncate(size)
+        assert get_file_size(file_path) == size
+
+    def test_missing_file(self, file_path: Path) -> None:
+        with assert_no_fd_leak(), pytest.raises(FileNotFoundError):
+            get_file_size(file_path)
 
 # ------------------------------------------------------------------------------
 
@@ -128,6 +143,22 @@ class TestWriteFileAtomically:
 
 # ------------------------------------------------------------------------------
 
+class TestSyncDirectory:
+    def test_sync(self, tmp_path: Path) -> None:
+        with assert_no_fd_leak():
+            sync_directory(tmp_path)
+
+    def test_missing_directory(self, tmp_path: Path) -> None:
+        with assert_no_fd_leak(), pytest.raises(FileNotFoundError):
+            sync_directory(tmp_path / "missing")
+
+    def test_not_a_directory(self, file_path: Path) -> None:
+        file_path.write_bytes(b"")
+        with assert_no_fd_leak(), pytest.raises(NotADirectoryError):
+            sync_directory(file_path)
+
+# ------------------------------------------------------------------------------
+
 class TestRemoveFile:
     @pytest.mark.parametrize("missing_ok", [False, True])
     def test_remove(self, file_path: Path, *, missing_ok: bool) -> None:
@@ -162,46 +193,30 @@ class TestRemoveFile:
 
 # ------------------------------------------------------------------------------
 
-class TestGetFileSize:
-    @pytest.mark.parametrize("size", [0, 1000, 4 * MIB])
-    def test_size(self, file_path: Path, size: int) -> None:
-        with file_path.open("wb") as file:
-            file.truncate(size)
-        assert get_file_size(file_path) == size
+class TestRemoveDirectoryTree:
+    @pytest.mark.parametrize("missing_ok", [False, True])
+    def test_remove(self, tmp_path: Path, *, missing_ok: bool) -> None:
+        # Create directory tree.
+        path = tmp_path / "tree"
+        (path / "directory").mkdir(parents=True)
+        (path / "directory" / "file").write_text("data")
 
-    def test_missing_file(self, file_path: Path) -> None:
-        with assert_no_fd_leak(), pytest.raises(FileNotFoundError):
-            get_file_size(file_path)
+        # The target of a symbolic link inside it must be preserved.
+        target_path = tmp_path / "target"
+        target_path.mkdir()
+        (target_path / "file").write_text("data")
+        (path / "link").symlink_to(target_path)
 
-# ------------------------------------------------------------------------------
+        remove_directory_tree(path, missing_ok=missing_ok)
+        assert not path.exists()
+        assert (target_path / "file").read_text() == "data"
 
-class TestKeepFilesOpen:
-    def test_keep_open(self, tmp_path: Path) -> None:
-        read_path = tmp_path / "read"
-        write_path = tmp_path / "write"
+    def test_remove_missing_directory(self, tmp_path: Path) -> None:
+        with pytest.raises(FileNotFoundError):
+            remove_directory_tree(tmp_path / "missing")
 
-        read_path.write_text("data")
-        write_path.write_text("data")
-
-        with keep_files_open([(read_path, False), (write_path, True)]):
-            assert (count_open_fds(read_path), count_open_fds(write_path)) == (1, 1)
-        assert (count_open_fds(read_path), count_open_fds(write_path)) == (0, 0)
-
-    def test_write_mode(self, tmp_path: Path) -> None:
-        # A directory opens for reading only.
-        with keep_files_open([(tmp_path, False)]):
-            assert count_open_fds(tmp_path) == 1
-
-        with assert_no_fd_leak(), pytest.raises(IsADirectoryError), keep_files_open([(tmp_path, True)]):
-            pass
-
-    def test_failure_closes_open_files(self, file_path: Path, tmp_path: Path) -> None:
-        open_path = tmp_path / "open"
-        open_path.write_text("data")
-
-        with assert_no_fd_leak(), pytest.raises(FileNotFoundError), \
-                keep_files_open([(open_path, False), (file_path, False)]):
-            pass
+    def test_remove_missing_directory_ok(self, tmp_path: Path) -> None:
+        remove_directory_tree(tmp_path / "missing", missing_ok=True)
 
 # ------------------------------------------------------------------------------
 
@@ -276,3 +291,33 @@ class TestTemporaryPathList:
         with create_temporary_directory(tmp_path / "file2"), create_temporary_directory(tmp_path / "other"), \
                 create_temporary_directory(file_path) as tmp_dir_path:
             assert list_temporary_paths(file_path) == [tmp_dir_path]
+
+# ------------------------------------------------------------------------------
+
+class TestKeepFilesOpen:
+    def test_keep_open(self, tmp_path: Path) -> None:
+        read_path = tmp_path / "read"
+        write_path = tmp_path / "write"
+
+        read_path.write_text("data")
+        write_path.write_text("data")
+
+        with keep_files_open([(read_path, False), (write_path, True)]):
+            assert (count_open_fds(read_path), count_open_fds(write_path)) == (1, 1)
+        assert (count_open_fds(read_path), count_open_fds(write_path)) == (0, 0)
+
+    def test_write_mode(self, tmp_path: Path) -> None:
+        # A directory opens for reading only.
+        with keep_files_open([(tmp_path, False)]):
+            assert count_open_fds(tmp_path) == 1
+
+        with assert_no_fd_leak(), pytest.raises(IsADirectoryError), keep_files_open([(tmp_path, True)]):
+            pass
+
+    def test_failure_closes_open_files(self, file_path: Path, tmp_path: Path) -> None:
+        open_path = tmp_path / "open"
+        open_path.write_text("data")
+
+        with assert_no_fd_leak(), pytest.raises(FileNotFoundError), \
+                keep_files_open([(open_path, False), (file_path, False)]):
+            pass

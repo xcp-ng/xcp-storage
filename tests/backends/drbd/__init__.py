@@ -18,9 +18,20 @@ from unittest.mock import patch
 
 import pytest
 
-from xcp_storage.backends.drbd import _get_drbd_debug_resource_openers_path, Drbd
+from xcp_storage.backends.drbd import (
+    _get_drbd_debug_resource_openers_path,
+    Drbd,
+    DrbdConnectionState,
+    DrbdDiskState,
+    DrbdRole,
+)
 
-from xcp_storage.typing import Final, Iterator
+from xcp_storage.typing import (
+    Final,
+    Iterator,
+    NamedTuple,
+    Sequence,
+)
 
 # ==============================================================================
 
@@ -28,12 +39,18 @@ _DRBD_MODULE: Final = Drbd.__module__
 
 # ------------------------------------------------------------------------------
 
-# Resource and nodes of the DRBD statuses of the tests (`drbd_json_status_*`).
+# Resource and nodes of the DRBD statuses of the mocked tests (`drbd_json_status_*`).
 TEST_DRBD_RESOURCE_NAME: Final = "xcp-volume-patate"
 TEST_DRBD_PRIMARY_NODE_NAME: Final = "sr123-s2"
 TEST_DRBD_PRIMARY_NODE_ADDRESS: Final = "10.10.0.13"
 TEST_DRBD_SECONDARY_NODE_NAME: Final = "sr123-s1"
 TEST_DRBD_SECONDARY_NODE_ADDRESS: Final = "10.10.0.12"
+
+TEST_DRBD_MISSING_NODE_NAME: Final = "sr123-s3"
+
+# Errors of `drbdsetup`: unknown resource, and state change refused (e.g. demotion of a resource held open).
+DRBDSETUP_NO_SUCH_RESOURCE_EXIT_CODE: Final = 10
+DRBDSETUP_STATE_CHANGE_FAILED_EXIT_CODE: Final = 11
 
 # ------------------------------------------------------------------------------
 
@@ -58,80 +75,39 @@ def drbd_debug_fs(tmp_path: Path) -> Iterator[DrbdDebugFs]:
 
 # ------------------------------------------------------------------------------
 
-@pytest.fixture
-def drbd_json_status_primary() -> str:
-    return json.dumps([{
-        "name": TEST_DRBD_RESOURCE_NAME,
-        "node-id": 1,
-        "role": "Primary",
-        "suspended": False,
-        "suspended-user": False,
-        "suspended-no-data": False,
-        "suspended-fencing": False,
-        "suspended-quorum": False,
-        "force-io-failures": False,
-        "write-ordering": "flush",
-        "devices": [{
-            "volume": 0,
-            "minor": 1261,
-            "disk-state": "UpToDate",
-            "client": False,
-            "open": False,
-            "quorum": True,
-            "size": 2109208,
-            "read": 0,
-            "written": 0,
-            "al-writes": 0,
-            "bm-writes": 0,
-            "upper-pending": 0,
-            "lower-pending": 0
-        }],
-        "connections": [{
-            "peer-node-id": 0,
-            "name": TEST_DRBD_SECONDARY_NODE_NAME,
-            "connection-state": "Connected",
-            "congested": False,
-            "peer-role": "Secondary",
-            "tls": False,
-            "ap-in-flight": 0,
-            "rs-in-flight": 0,
-            "paths": [{
-                "this_host": {
-                    "address": TEST_DRBD_PRIMARY_NODE_ADDRESS,
-                    "port": 7261,
-                    "family": "ipv4"
-                },
-                "remote_host": {
-                    "address": TEST_DRBD_SECONDARY_NODE_ADDRESS,
-                    "port": 7261,
-                    "family": "ipv4"
-                },
-                "established": True
-            }],
-            "peer_devices": [{
-                "volume": 0,
-                "replication-state": "Established",
-                "peer-disk-state": "UpToDate",
-                "peer-client": False,
-                "resync-suspended": "no",
-                "received": 0,
-                "sent": 0,
-                "out-of-sync": 0,
-                "pending": 0,
-                "unacked": 0,
-                "has-sync-details": False,
-                "has-online-verify-details": False,
-                "percent-in-sync": 100
-            }]
-        }]
-    }])
+class DrbdStatusNode(NamedTuple):
+    """
+    Node of the resource of the DRBD statuses of the tests.
+    """
 
-@pytest.fixture
-def drbd_json_status_secondary() -> str:
+    node_id: int
+    name: str
+    address: str
+    role: DrbdRole
+    # Diskless replica (DRBD client), like a tie-breaker.
+    diskless: bool = False
+
+# ------------------------------------------------------------------------------
+
+def create_drbdsetup_no_such_resource_error(resource_name: str) -> str:
+    return f"{resource_name}: No such resource\n"
+
+def create_drbdsetup_held_open_error(resource_name: str) -> str:
+    return f"{resource_name}: State change failed: (-12) Device is held open by someone\n"
+
+# ------------------------------------------------------------------------------
+
+def create_drbd_json_status(
+    resource_name: str,
+    node: DrbdStatusNode,
+    peer_nodes: Sequence[DrbdStatusNode],
+    volume_numbers: Sequence[int] = (0, )
+) -> str:
+    # Output of `drbdsetup status --json` on `node`: the volumes are up to date on all the diskful nodes.
     return json.dumps([{
-        "name": TEST_DRBD_RESOURCE_NAME,
-        "node-id": 0,
-        "role": "Secondary",
+        "name": resource_name,
+        "node-id": node.node_id,
+        "role": node.role,
         "suspended": False,
         "suspended-user": False,
         "suspended-no-data": False,
@@ -140,10 +116,10 @@ def drbd_json_status_secondary() -> str:
         "force-io-failures": False,
         "write-ordering": "flush",
         "devices": [{
-            "volume": 0,
+            "volume": volume_number,
             "minor": 1261,
-            "disk-state": "UpToDate",
-            "client": False,
+            "disk-state": DrbdDiskState.DISKLESS if node.diskless else DrbdDiskState.UP_TO_DATE,
+            "client": node.diskless,
             "open": False,
             "quorum": True,
             "size": 2109208,
@@ -153,34 +129,34 @@ def drbd_json_status_secondary() -> str:
             "bm-writes": 0,
             "upper-pending": 0,
             "lower-pending": 0
-        }],
+        } for volume_number in volume_numbers],
         "connections": [{
-            "peer-node-id": 1,
-            "name": TEST_DRBD_PRIMARY_NODE_NAME,
-            "connection-state": "Connected",
+            "peer-node-id": peer_node.node_id,
+            "name": peer_node.name,
+            "connection-state": DrbdConnectionState.CONNECTED,
             "congested": False,
-            "peer-role": "Primary",
+            "peer-role": peer_node.role,
             "tls": False,
             "ap-in-flight": 0,
             "rs-in-flight": 0,
             "paths": [{
                 "this_host": {
-                    "address": TEST_DRBD_SECONDARY_NODE_ADDRESS,
+                    "address": node.address,
                     "port": 7261,
                     "family": "ipv4"
                 },
                 "remote_host": {
-                    "address": TEST_DRBD_PRIMARY_NODE_ADDRESS,
+                    "address": peer_node.address,
                     "port": 7261,
                     "family": "ipv4"
                 },
                 "established": True
             }],
             "peer_devices": [{
-                "volume": 0,
+                "volume": volume_number,
                 "replication-state": "Established",
-                "peer-disk-state": "UpToDate",
-                "peer-client": False,
+                "peer-disk-state": DrbdDiskState.DISKLESS if peer_node.diskless else DrbdDiskState.UP_TO_DATE,
+                "peer-client": peer_node.diskless,
                 "resync-suspended": "no",
                 "received": 0,
                 "sent": 0,
@@ -190,6 +166,6 @@ def drbd_json_status_secondary() -> str:
                 "has-sync-details": False,
                 "has-online-verify-details": False,
                 "percent-in-sync": 100
-            }]
-        }]
+            } for volume_number in volume_numbers]
+        } for peer_node in peer_nodes]
     }])

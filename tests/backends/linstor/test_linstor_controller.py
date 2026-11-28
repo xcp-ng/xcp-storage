@@ -27,7 +27,7 @@ from xcp_storage.backends.linstor.controller import (
     LINSTOR_URI_PREFIX,
     LinstorController,
 )
-from xcp_storage.network.socket import (
+from xcp_storage.utils.network.socket import (
     create_tcp_client_sock,
     create_tcp_server_sock,
     Socket,
